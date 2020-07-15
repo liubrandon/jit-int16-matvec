@@ -57,3 +57,4 @@ matvec
 .nfs*
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,c++,assembler
+.vscode/c_cpp_properties.json

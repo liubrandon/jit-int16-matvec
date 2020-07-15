@@ -1,3 +1,3 @@
 .PHONY: matvec
 matvec:
-	g++ -o matvec ./src/jit_int16_matvec.cpp
+	g++ -o matvec ./src/jit_int16_matvec.cpp -I/usr/local/include/Zydis /usr/local/lib/libZydis.a
