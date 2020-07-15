@@ -1,5 +1,6 @@
 #include <xbyak/xbyak.h>
 #include <string.h>
+#include <iostream>
 #define DIE(...) fprintf(stderr, __VA_ARGS__); exit(1);
 
 struct Complex_int16 {
@@ -26,7 +27,7 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)
         : Xbyak::CodeGenerator(4096, Xbyak::DontSetProtectRWE) // use Read/Exec mode for security
     {  // Input parameters rdi=mat, rsi=vec, rdx=res (https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf)
-        movsx(eax, word [rdi]); // This returns the first real element of mat
+        mov(eax, dword [rdi]); // This returns the first real element of mat
         ret();
     }
 };
@@ -59,10 +60,10 @@ int main(int argc, char** argv) {
     // Generate code at runtime (Just-in-Time)
     JitInt16MatVec jit(m, k);
     jit.setProtectModeRE(); // use Read/Exec mode for security
-    int (*matvec)(const Complex_int16*, const Complex_int16*, Complex_int16*) = jit.getCode<int (*)(const Complex_int16*, const Complex_int16*, Complex_int16*)>();
+    Complex_int16 (*matvec)(const Complex_int16*, const Complex_int16*, Complex_int16*) = jit.getCode<Complex_int16 (*)(const Complex_int16*, const Complex_int16*, Complex_int16*)>();
 
     // Output result
-    printf("ret=%d\n", matvec(mat, vec, res));
+    std::cout << matvec(mat, vec, res) << std::endl;
 
     // Free allocated memory
     free(mat); free(vec); free(res);
