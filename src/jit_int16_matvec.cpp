@@ -3,8 +3,20 @@
 #include <fstream>
 #include <string.h>
 #include <iostream>
+#include "immintrin.h"
+#include <complex>
+#include "mkl.h"
+#include "timer.hpp"
 #define DIE(...) fprintf(stderr, __VA_ARGS__); exit(1);
 
+struct Complex_float {
+    float real;
+    float imag;
+    friend std::ostream& operator<<(std::ostream& os, const Complex_float& c) {
+        os << "(" << c.real << "," << c.imag << ")";
+        return os;
+    }
+};
 struct Complex_int16 {
     int16_t real;
     int16_t imag;
@@ -24,7 +36,6 @@ struct Complex_int16 {
         return os;
     }
 };
-
 void outputASM(void* func, int m, int n, std::string filePrefix) {
     // Initialize decoder context
     ZydisDecoder decoder;
@@ -79,6 +90,74 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
     }
 };
 
+Complex_float broad = {1.0,-1.0};
+struct JitFloatMatVec : Xbyak::CodeGenerator {
+    JitFloatMatVec(int m, int k)
+        : Xbyak::CodeGenerator(4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
+    {  // Input parameters rdi=?, rsi=mat, rdx=vec, rcx=res
+        vpbroadcastq(zmm31, ptr [rdi]);
+        vmovups(zmm30, zword [rsi]);
+        vmovups(zmm29, zword [rsi+0x40]);
+        vmulps(zmm28, zmm30, ptr_b [rdx]);
+        vmulps(zmm23, zmm30, ptr_b [rdx+0x04]);
+        vmovups(zmm30, zword [rsi+0x80]);
+        vmulps(zmm27, zmm29, ptr_b [rdx+0x08]);
+        vmulps(zmm22, zmm29, ptr_b [rdx+0x0C]);
+        vmovups(zmm29, zword [rsi+0xC0]);
+        vmulps(zmm26, zmm30, ptr_b [rdx+0x10]);
+        vmulps(zmm21, zmm30, ptr_b [rdx+0x14]);
+        vmovups(zmm30, zword [rsi+0x100]);
+        vmulps(zmm25, zmm29, ptr_b [rdx+0x18]);
+        vmulps(zmm20, zmm29, ptr_b [rdx+0x1C]);
+        vmovups(zmm29, zword [rsi+0x140]);
+        vmulps(zmm24, zmm30, ptr_b [rdx+0x20]);
+        vmulps(zmm19, zmm30, ptr_b [rdx+0x24]);
+        vmovups(zmm30, zword [rsi+0x180]);
+        vfmadd231ps(zmm28, zmm29, ptr_b [rdx+0x28]);
+        vfmadd231ps(zmm23, zmm29, ptr_b [rdx+0x2C]);
+        vmovups(zmm29, zword [rsi+0x1C0]);
+        vfmadd231ps(zmm27, zmm30, ptr_b [rdx+0x30]);
+        vfmadd231ps(zmm22, zmm30, ptr_b [rdx+0x34]);
+        vfmadd231ps(zmm26, zmm29, ptr_b [rdx+0x38]);
+        vfmadd231ps(zmm21, zmm29, ptr_b [rdx+0x3C]);
+        vaddps(zmm28, zmm28, zmm24);
+        vaddps(zmm23, zmm23, zmm19);
+        vaddps(zmm28, zmm28, zmm26);
+        vaddps(zmm23, zmm23, zmm21);
+        vaddps(zmm27, zmm27, zmm25);
+        vaddps(zmm22, zmm22, zmm20);
+        vaddps(zmm28, zmm28, zmm27);
+        vaddps(zmm23, zmm23, zmm22);
+        vpermilps(zmm23, zmm23, 0xB1);
+        vfnmadd231ps(zmm28, zmm23, zmm31);
+        vmovups(zword [rcx], zmm28);
+        vzeroupper();
+        ret();
+    }
+};
+
+double runJITCGEMM(MKL_Complex8* a, MKL_Complex8* b, MKL_Complex8* c, MKL_INT m, MKL_INT k, int numIter) {
+    MKL_Complex8 alpha = {1, 0};
+    MKL_Complex8 beta = {0, 0};
+    MKL_INT lda = m;
+    MKL_INT ldb = k;
+    MKL_INT ldc = m;
+    void* jitter;
+    double start = getTime();
+    mkl_jit_status_t status = mkl_jit_create_cgemm(&jitter, MKL_COL_MAJOR, MKL_NOTRANS, MKL_NOTRANS, m, 1, k, &alpha, lda, ldb, &beta, ldc);
+    // if (MKL_JIT_ERROR == status) {
+    //     fprintf(stderr, "Error: insufficient memory to JIT and store the DGEMM kernel\n");
+    //     exit(1);
+    // }
+    cgemm_jit_kernel_t my_cgemm = mkl_jit_get_cgemm_ptr(jitter);
+    for(int i = 0; i < numIter; i++)
+        my_cgemm(jitter, a, b, c); // execute the GEMM kernel
+    double ret = timeSince(start);
+    outputASM((void*)my_cgemm, m, k, "mkl");
+    mkl_jit_destroy((void*)my_cgemm);
+    return ret;
+}
+
 int main(int argc, char** argv) {
     // Parse arguments and declare/initialize variables
     if(argc != 2) {
@@ -87,35 +166,45 @@ int main(int argc, char** argv) {
     srand(time(0));
     long numIter = 100000;
     int m, k;
-    Complex_int16 *mat, *vec, *res;
+    Complex_float *mat, *vec, *res, *res1;
     char* nPtr;
     m = strtoul(argv[1], &nPtr, 0);
     k = strtoul(nPtr+1, NULL, 0);
 
     // Allocate memory for matrix, vector, and resulting vector aligned on 64 byte boundary
-    mat = (Complex_int16*)aligned_alloc(64, m*k*sizeof(Complex_int16));
-    vec = (Complex_int16*)aligned_alloc(64, k*sizeof(Complex_int16));
-    res = (Complex_int16*)aligned_alloc(64, m*sizeof(Complex_int16));
-    memset(res, 0, m*sizeof(Complex_int16));
+    mat = (Complex_float*)aligned_alloc(64, m*k*sizeof(Complex_float));
+    vec = (Complex_float*)aligned_alloc(64, k*sizeof(Complex_float));
+    res = (Complex_float*)aligned_alloc(64, m*sizeof(Complex_float));
+    memset(res, 0, m*sizeof(Complex_float));
+    res1 = (Complex_float*)aligned_alloc(64, m*sizeof(Complex_float));
+    memset(res1, 0, m*sizeof(Complex_float));
 
     // Randomly generate matrix/vector with values from -range to range
     int mod = 10; //rand()%mod-range
     int range = mod/2;
-    for(int i = 0; i < m*k; i++) mat[i] = {(int16_t)(-100), (int16_t)(i+1)};
-    for(int i = 0; i < k; i++)   vec[i] = {(int16_t)(i+1), (int16_t)(i)};
+    for(int i = 0; i < m*k; i++) mat[i] = {(float)(rand()%mod-range), (float)(rand()%mod-range)};
+    for(int i = 0; i < k; i++)   vec[i] = {(float)(rand()%mod-range), (float)(rand()%mod-range)};
 
     // Generate code at runtime (Just-in-Time) and output asm
-    JitInt16MatVec jit(m, k);
+    double start = getTime();
+    JitFloatMatVec jit(m, k);
     jit.setProtectModeRE(); // Use Read/Exec mode for security
-    void (*matvec)(const Complex_int16*, const Complex_int16*, Complex_int16*) = jit.getCode<void (*)(const Complex_int16*, const Complex_int16*, Complex_int16*)>();
-    outputASM((void*)matvec, m, k, "jit");
-
-    matvec(mat, vec, res);
-
+    void (*matvec)(void* notUsed, const Complex_float*, const Complex_float*, Complex_float*) = jit.getCode<void (*)(void* notUsed, const Complex_float*, const Complex_float*, Complex_float*)>();
+    for(int i = 0; i < numIter; i++)
+        matvec((void*)&broad, mat, vec, res);
+    double myTime = timeSince(start);
+    double mklTime = runJITCGEMM((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res1, m, k, numIter);
     // Output result
     for(int i = 0; i < m; i++) std::cout << res[i];
     std::cout << std::endl;
+    for(int i = 0; i < m; i++) std::cout << res1[i];
+    std::cout << std::endl;
+    outputASM((void*)matvec, m, k, "myfloat");
 
+    printf("\n        ---------- \n\n");
+    printf("     %ld iterations, (%dx%d) * (%dx%d)\n", numIter, m, k, k, 1);
+    printf("MKL JIT cgemm: %.10f µs per iteration\n", mklTime/(double)numIter);
+    printf(" my JIT float: %.10f µs per iteration\n", myTime/(double)numIter);
     // Free allocated memory
     free(mat); free(vec); free(res);
 }
