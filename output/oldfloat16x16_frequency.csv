@@ -1,0 +1,17 @@
+vfmadd231ps,55
+vmovups,34
+vbroadcastss,32
+vfmadd132ps,5
+vmulps,4
+mov,2
+vpermilps,2
+push,1
+movabs,1
+and,1
+vbroadcastsd,1
+vfnmadd231ps,1
+vfnmadd132ps,1
+vzeroupper,1
+leave,1
+ret,1
+sum,143
