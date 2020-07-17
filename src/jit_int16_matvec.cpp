@@ -597,45 +597,56 @@ double runJITCGEMM(MKL_Complex8* a, MKL_Complex8* b, MKL_Complex8* c, MKL_INT m,
 
 // static const float temp3[16] = {1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1};
 // const __m512 addSub = _mm512_loadu_ps((const void*)temp3);
-void matvecFloat_16x16(const MKL_Complex8* mat, const MKL_Complex8* vec, MKL_Complex8* res) {
-    __m512 a_b, a_b1, a_b2, a_b3, c_c, d_d, ac_bc, ad_bd, bd_ad, bd_ad1;
+void matvecFloat_64x16(const MKL_Complex8* mat, const MKL_Complex8* vec, MKL_Complex8* res) {
+    __m512 a_b, a_b1, a_b2, a_b3, a_b4, c_c, d_d, ac_bc, ad_bd, bd_ad, bd_ad1,bd_ad2,bd_ad3;
     __m512 ac_bc_accu, ad_bd_accu, ac_bc_accu1, ad_bd_accu1, ac_bc_accu2, ad_bd_accu2, ac_bc_accu3, ad_bd_accu3, ac_bc_accu4, ad_bd_accu4;
     MKL_Complex8 val;
     MKL_Complex8 broad = {1.0, -1.0};
     __m512 addSub = (__m512)_mm512_broadcastsd_pd(*(__m128d*)&broad);
-    val = vec[0];
-    a_b = _mm512_loadu_ps((const void*)&mat[0]);
-    a_b1 = _mm512_loadu_ps((const void*)&mat[8]);
-    c_c = _mm512_set1_ps(val.real);
-    ac_bc_accu = _mm512_mul_ps(a_b, c_c);
-    ac_bc_accu1 = _mm512_mul_ps(a_b1, c_c);
-    d_d = _mm512_set1_ps(val.imag);
-    ad_bd_accu = _mm512_mul_ps(a_b, d_d);
-    ad_bd_accu1 = _mm512_mul_ps(a_b1, d_d);
-
-    for(int c = 1; c < 16; c++) {
-        val = vec[c];
-        a_b = _mm512_loadu_ps((const void*)&mat[c*16]);
-        a_b1 = _mm512_loadu_ps((const void*)&mat[c*16+8]);
-        c_c = _mm512_set1_ps(val.real);
-        ac_bc_accu = _mm512_fmadd_ps(a_b, c_c, ac_bc_accu);
-        ac_bc_accu1 = _mm512_fmadd_ps(a_b1, c_c, ac_bc_accu1);
-        d_d = _mm512_set1_ps(val.imag);
-        ad_bd_accu = _mm512_fmadd_ps(a_b, d_d, ad_bd_accu);
-        ad_bd_accu1 = _mm512_fmadd_ps(a_b1, d_d, ad_bd_accu1);
+    for(int r = 0; r < 64; r+=32) {
+        a_b  = _mm512_loadu_ps((const void*)&mat[r+0]);
+        a_b1 = _mm512_loadu_ps((const void*)&mat[r+8]);
+        a_b2 = _mm512_loadu_ps((const void*)&mat[r+16]);
+        a_b3 = _mm512_loadu_ps((const void*)&mat[r+24]);
+        c_c = _mm512_set1_ps(vec[0].real);
+        ac_bc_accu =  _mm512_mul_ps(a_b, c_c);
+        ac_bc_accu1 = _mm512_mul_ps(a_b1, c_c);
+        ac_bc_accu2 = _mm512_mul_ps(a_b2, c_c);
+        ac_bc_accu3 = _mm512_mul_ps(a_b3, c_c);
+        d_d = _mm512_set1_ps(vec[0].imag);
+        ad_bd_accu =  _mm512_mul_ps(a_b, d_d);
+        ad_bd_accu1 = _mm512_mul_ps(a_b1, d_d);
+        ad_bd_accu2 = _mm512_mul_ps(a_b2, d_d);
+        ad_bd_accu3 = _mm512_mul_ps(a_b3, d_d);
+        for(int c = 1; c < 16; c++) {
+            a_b1 = _mm512_loadu_ps((const void*)&mat[r+c*64+8]);
+            a_b =  _mm512_loadu_ps((const void*)&mat[r+c*64]);
+            a_b2 = _mm512_loadu_ps((const void*)&mat[r+c*64+16]);
+            a_b3 = _mm512_loadu_ps((const void*)&mat[r+c*64+24]);
+            c_c = _mm512_set1_ps(vec[c].real);
+            ac_bc_accu =  _mm512_fmadd_ps(a_b, c_c, ac_bc_accu);
+            ac_bc_accu1 = _mm512_fmadd_ps(a_b1, c_c, ac_bc_accu1);
+            ac_bc_accu2 = _mm512_fmadd_ps(a_b2, c_c, ac_bc_accu2);
+            ac_bc_accu3 = _mm512_fmadd_ps(a_b3, c_c, ac_bc_accu3);
+            d_d = _mm512_set1_ps(vec[c].imag);
+            ad_bd_accu =  _mm512_fmadd_ps(a_b, d_d, ad_bd_accu);
+            ad_bd_accu1 = _mm512_fmadd_ps(a_b1, d_d, ad_bd_accu1);
+            ad_bd_accu2 = _mm512_fmadd_ps(a_b2, d_d, ad_bd_accu2);
+            ad_bd_accu3 = _mm512_fmadd_ps(a_b3, d_d, ad_bd_accu3);
+        }
+        bd_ad = _mm512_permute_ps(ad_bd_accu, 0xB1);
+        ac_bc_accu = _mm512_fnmadd_ps(bd_ad, addSub, ac_bc_accu);
+        bd_ad1 = _mm512_permute_ps(ad_bd_accu1, 0xB1);
+        ac_bc_accu1 = _mm512_fnmadd_ps(bd_ad1, addSub, ac_bc_accu1);
+        bd_ad2 = _mm512_permute_ps(ad_bd_accu2, 0xB1);
+        ac_bc_accu2 = _mm512_fnmadd_ps(bd_ad2, addSub, ac_bc_accu2);
+        bd_ad3 = _mm512_permute_ps(ad_bd_accu3, 0xB1);
+        ac_bc_accu3 = _mm512_fnmadd_ps(bd_ad3, addSub, ac_bc_accu3);
+        _mm512_storeu_ps(res+r, ac_bc_accu);
+        _mm512_storeu_ps(res+r+8, ac_bc_accu1);
+        _mm512_storeu_ps(res+r+16, ac_bc_accu2);
+        _mm512_storeu_ps(res+r+24, ac_bc_accu3);
     }
-    // Swap even and odd in ad_bd
-    bd_ad = _mm512_permute_ps(ad_bd_accu, 0xB1);
-    ac_bc_accu = _mm512_fnmadd_ps(bd_ad, addSub, ac_bc_accu);
-
-    bd_ad1 = _mm512_permute_ps(ad_bd_accu1, 0xB1);
-
-    // Fused negate multiply add -> simplified to multiply, add
-    ac_bc_accu1 = _mm512_fnmadd_ps(bd_ad1, addSub, ac_bc_accu1);
-
-    // Store results in the array
-    _mm512_storeu_ps(res, ac_bc_accu);
-    _mm512_storeu_ps(res+8, ac_bc_accu1);
 }
 
 int main(int argc, char** argv) {
@@ -673,13 +684,13 @@ int main(int argc, char** argv) {
     jit.setProtectModeRE(); // Use Read/Exec mode for security
     void (*matvec)(void* notUsed, const Complex_float*, const Complex_float*, Complex_float*) = jit.getCode<void (*)(void* notUsed, const Complex_float*, const Complex_float*, Complex_float*)>();
     for(int i = 0; i < numIter; i++) {
-        //matvec((void*)&broad, mat, vec, res);
+        matvec((void*)&broad, mat, vec, res);
     }
     double myTime = timeSince(start);
     double mklTime = runJITCGEMM((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res1, m, k, numIter);
     start = getTime();
     for(int i = 0; i < numIter; i++)
-        matvecFloat_16x16((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res2);
+        matvecFloat_64x16((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res2);
     double oldTime = timeSince(start);
 
     // Output result
