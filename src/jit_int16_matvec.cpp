@@ -88,56 +88,53 @@ __m512i swapPairs = _mm512_loadu_si512((const void*)temp);
 __m512i subAdd = _mm512_loadu_si512((const void*)temp1);
 struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)
-        : Xbyak::CodeGenerator(4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
+        : Xbyak::CodeGenerator(4*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
     {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs (https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf)
-        sub(rsp, 0x100); // allocate 256 bytes to the stack (size of 64 Complex_int16)
-        vpbroadcastd(zmm31, dword [rdi]); //  rdi = {1, -1, ...}
+        vpbroadcastd(zmm31, dword [rdi]); //  rdi = &{1, -1}, zmm31
         vmovdqu16(zmm0, zword [r8]);      // zmm0 = swapPairs
-        vmovdqu16(zmm30, zword [rsi]); // load first column (a_b)
-        vmovdqu16(zmm1, zword [rdx]);
-        vmovdqu16(zmm2, zword [rdx+0x40]);
-        vmovdqu16(zmm3, zword [rdx+0x80]);
-        vmovdqu16(zmm4, zword [rdx+0xC0]);
-        vpshufb(zmm1, zmm1, zmm0); // swap pairs of vector
-        vpshufb(zmm2, zmm2, zmm0);
-        vpshufb(zmm3, zmm3, zmm0);
-        vpshufb(zmm4, zmm4, zmm0);
-        vmovdqu16(zword [rsp],zmm1); // store swapped vector into the stack
-        vmovdqu16(zword [rsp+0x40],zmm2);
-        vmovdqu16(zword [rsp+0x80],zmm3);
-        vmovdqu16(zword [rsp+0xC0],zmm4);
-        // first iteration use madd
-        vpbroadcastd(zmm5, dword [rdx]); // zmm5 = c_d (broadcast first two values from vec to all locations)
-        vpmullw(zmm5, zmm5, zmm31); // zmm5 = c_minus_d (negate every other value in zmm5)
-        vpmaddwd(zmm29, zmm30, zmm5); // zmm29 = real_res accumulator
-        vpbroadcastd(zmm6, dword [rsp]); /// zmm6 = d_c
-        vpmaddwd(zmm28, zmm30, zmm6); // zmm28 = imag_res accumulator
-        for(int i = 1; i < 64; i++) {
-            add(rsi, 0x40); // advance to next column of mat
-            add(rdx, 0x04); // advance 4 bytes to next complex number of vec
-            add(rsp, 0x04); // advance 4 bytes to next complex number of vec_swapped
-            vmovdqu16(zmm30, zword [rsi]);
-            vpbroadcastd(zmm5, dword [rdx]);
-            vpmullw(zmm5, zmm5, zmm31);
-            vpdpwssds(zmm29, zmm30, zmm5);
-            vpbroadcastd(zmm6, dword [rsp]); 
-            vpdpwssds(zmm28, zmm30, zmm6);
+        sub(rsp, 0x04*k); // allocate 256 bytes to the stack (size of 64 Complex_int16)
+        // Set up writemask k1
+        mov(esi, 0xAAAAAAAA);
+        kmovd(k1, esi);
+        for(int i = 0; i < k/16; i++) {
+            // load vec into registers, swap pairs of vec, store swapped vector on the the stack
+            vmovdqu16(zmm1, zword [rdx+(i*0x40)]);
+            vpshufb(zmm1, zmm1, zmm0); 
+            vmovdqu16(zword [rsp+(i*0x40)], zmm1); 
         }
-        add(rsp, 0x04);
-
-        vmovdqu64(zword [rcx], zmm29);
-        mov(eax,0x55555555);
-        kmovd(k1,eax);
-        vmovdqu16(zword [rcx+0x2] | k1, zmm28);
-        
-        // vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
-        // // Set up writemask k1
-        // mov(esi, 0xAAAAAAAA);
-        // kmovd(k1, esi);
-        // // Interleave real and imaginary
-        // vmovdqu16(zmm29 | k1, zmm28);
-        // // Write to memory
-        // vmovdqa64(zword [rcx], zmm29);
+        for(int r = 0; r < m/16; r++) {
+            // first column use madd
+            vmovdqu16(zmm30, zword [rsi+(r*0x40)]); // load first column (a_b)
+            vpbroadcastd(zmm5, dword [rdx]); // zmm5 = c_d (broadcast first two values from vec to all locations)
+            vpmullw(zmm5, zmm5, zmm31); // zmm5 = c_minus_d (negate every other value in zmm5)
+            vpbroadcastd(zmm6, dword [rsp]); /// zmm6 = d_c
+            vpmaddwd(zmm29, zmm30, zmm5); // zmm29 = real_res accumulator
+            vpmaddwd(zmm28, zmm30, zmm6); // zmm28 = imag_res accumulator
+            
+            // rest of the columns use fused madd (vpdpwssds) 
+            for(int i = 1; i < k; i++) {
+                vmovdqu16(zmm30, zword [rsi+(i*0x4*m)+(r*0x40)]);
+                vpbroadcastd(zmm5, dword [rdx+(i*0x04)]);
+                vpmullw(zmm5, zmm5, zmm31);
+                vpbroadcastd(zmm6, dword [rsp+(i*0x04)]); 
+                vpdpwssds(zmm29, zmm30, zmm5);
+                vpdpwssds(zmm28, zmm30, zmm6);
+            }
+            // Two stores approach
+            // vmovdqu64(zword [rcx], zmm29);
+            // mov(eax,0x55555555);
+            // kmovd(k1,eax);
+            // vmovdqu16(zword [rcx+0x2] | k1, zmm28);
+            
+            // Shift, blend, and store approach
+            vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
+            // Interleave real and imaginary
+            vmovdqu16(zmm29 | k1, zmm28);
+            // Write to memory
+            vmovdqa64(zword [rcx+(r*0x40)], zmm29);
+            // deallocate stack space and return
+        }
+        add(rsp, 0x04*k);
         ret();
     }
 };
@@ -316,11 +313,11 @@ int main(int argc, char** argv) {
     int mod = 10; //rand()%mod-range
     int range = mod/2;
     for(int i = 0; i < m*k; i++) {
-        mat16[i] = {(int16_t)(i%mod-0+1), (int16_t)(i%mod-0)};
+        mat16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
         mat[i] = {(float)mat16[i].real, (float)mat16[i].imag};
     }
     for(int i = 0; i < k; i++) {
-        vec16[i] = {(int16_t)(i%mod-0), (int16_t)(i%mod-0+1)};
+        vec16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
         vec[i] = {(float)vec16[i].real, (float)vec16[i].imag};
     }
     // for(int i = 0; i < k; i++) {
@@ -336,12 +333,12 @@ int main(int argc, char** argv) {
     double mklTime = runJITCGEMM((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res1, m, k, numIter);
 
     double start = getTime();
-    JitFloatMatVec jit(m, k);
-    jit.setProtectModeRE(); // Use Read/Exec mode for security
-    void (*matvec)(void* notUsed, const Complex_float*, const Complex_float*, Complex_float*) = jit.getCode<void (*)(void* notUsed, const Complex_float*, const Complex_float*, Complex_float*)>();
-    for(int i = 0; i < numIter; i++) {
-        matvec((void*)&broad, mat, vec, res);
-    }
+    // JitFloatMatVec jit(m, k);
+    // jit.setProtectModeRE(); // Use Read/Exec mode for security
+    // void (*matvec)(void* notUsed, const Complex_float*, const Complex_float*, Complex_float*) = jit.getCode<void (*)(void* notUsed, const Complex_float*, const Complex_float*, Complex_float*)>();
+    // for(int i = 0; i < numIter; i++) {
+    //     matvec((void*)&broad, mat, vec, res);
+    // }
     double myFloatTime = timeSince(start);
     start = getTime();
     // for(int i = 0; i < numIter; i++)
@@ -350,18 +347,18 @@ int main(int argc, char** argv) {
     start = getTime();
     JitInt16MatVec jit16(m, k);
     jit16.setProtectModeRE(); // Use Read/Exec mode for security
-    void (*matvec16)(void* notUsed, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs) = jit16.getCode<void (*)(void* notUsed, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs)>();
+    void (*matvec16)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs) = jit16.getCode<void (*)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs)>();
     for(int i = 0; i < numIter; i++)
         matvec16((void*)&broad16, mat16, vec16, res16, (void*)&swapPairs);
     double myTime = timeSince(start);
 
     // Save .asm of each function
-    outputASM((void*)matvec, m, k, "./asm/myfloat");
+    //outputASM((void*)matvec, m, k, "./asm/myfloat");
     outputASM((void*)matvec16, m, k, "./asm/myint16");
 
     // Output result
-    for(int i = 0; i < m; i++) std::cout << res[i];
-    std::cout << std::endl;
+    // for(int i = 0; i < m; i++) std::cout << res[i];
+    // std::cout << std::endl;
     for(int i = 0; i < m; i++) std::cout << res1[i];
     std::cout << std::endl;
     // for(int i = 0; i < m; i++) std::cout << res2[i];
@@ -376,6 +373,9 @@ int main(int argc, char** argv) {
     printf(" my JIT float: %.10f µs per iteration\n", myFloatTime/(double)numIter);
     printf("    old float: %.10f µs per iteration\n", oldFloatTime/(double)numIter);
     printf(" my JIT int16: %.10f µs per iteration\n", myTime/(double)numIter);
+    #define RESET   "\033[0m" // Terminal color codes
+    #define BOLDGREEN   "\033[1m\033[32m" 
+    std::cout << "  " << BOLDGREEN << std::fixed << std::setprecision(2) << mklTime/myTime << "x" << RESET << " MKL JIT cgemm" << std::endl;
     // // Free allocated memory
     // free(mat); free(vec); free(res); free(res1); free(res2);
     // free(mat16); free(vec16); free(res16);
