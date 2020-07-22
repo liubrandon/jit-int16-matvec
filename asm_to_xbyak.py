@@ -1,6 +1,6 @@
 import re
 # Takes in a .asm file from Zydis output and reformats the assembly for Xbyak
-f = open("mkl64x16.asm", "r")
+f = open("./asm/mkl16x64.asm", "r")
 text = f.read()
 for line in text.splitlines():
     noAddr = re.sub(r'0x\w+\s+', '', line)

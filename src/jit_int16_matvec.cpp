@@ -7,6 +7,7 @@
 #include <complex>
 #include "mkl.h"
 #include "timer.hpp"
+#include <iomanip>
 #define DIE(...) fprintf(stderr, __VA_ARGS__); exit(1);
 #define my_vfmadd231w(accu, one, two) ({ \
     vpmullw(one, one, two); \
@@ -89,269 +90,54 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)
         : Xbyak::CodeGenerator(4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
     {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs (https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf)
+        sub(rsp, 0x100); // allocate 256 bytes to the stack (size of 64 Complex_int16)
         vpbroadcastd(zmm31, dword [rdi]); //  rdi = {1, -1, ...}
-        vmovdqu16(zmm0, zword [r8]);      // zmm1 = swapPairs
-        // load/compute 1st column
-        vmovdqu16(zmm30, zword [rsi]);
-        vmovdqu16(zmm29, zword [rsi+0x40]);
-        vmovdqu16(zmm28, zword [rsi+0x80]);
-        vmovdqu16(zmm27, zword [rsi+0xC0]);
-        vpbroadcastw(zmm14, word [rdx]);
-        vpmullw(zmm22, zmm30, zmm14);
-        vpmullw(zmm21, zmm29, zmm14);
-        vpmullw(zmm20, zmm28, zmm14);
-        vpmullw(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x02]);
-        vpmullw(zmm18, zmm30, zmm14);
-        vpmullw(zmm17, zmm29, zmm14);
-        vpmullw(zmm16, zmm28, zmm14);
-        vpmullw(zmm15, zmm27, zmm14);
-        // 2nd column
-        vmovdqu16(zmm26, zword [rsi+0x100]);
-        vmovdqu16(zmm25, zword [rsi+0x140]);
-        vmovdqu16(zmm24, zword [rsi+0x180]);
-        vmovdqu16(zmm23, zword [rsi+0x1C0]);
-        vpbroadcastw(zmm14, word [rdx+0x04]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x06]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // 3rd column
-        vmovdqu16(zmm26, zword [rsi+0x200]);
-        vmovdqu16(zmm25, zword [rsi+0x240]);
-        vmovdqu16(zmm24, zword [rsi+0x280]);
-        vmovdqu16(zmm23, zword [rsi+0x2C0]);
-        vpbroadcastw(zmm14, word [rdx+0x08]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x0A]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // fourth column
-        vmovdqu16(zmm26, zword [rsi+0x300]);
-        vmovdqu16(zmm25, zword [rsi+0x340]);
-        vmovdqu16(zmm24, zword [rsi+0x380]);
-        vmovdqu16(zmm23, zword [rsi+0x3C0]);
-        vpbroadcastw(zmm14, word [rdx+0x0C]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x0E]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // fifth column
-        vmovdqu16(zmm26, zword [rsi+0x400]);
-        vmovdqu16(zmm25, zword [rsi+0x440]);
-        vmovdqu16(zmm24, zword [rsi+0x480]);
-        vmovdqu16(zmm23, zword [rsi+0x4C0]);
-        vpbroadcastw(zmm14, word [rdx+0x10]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x12]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // sixth column
-        vmovdqu16(zmm26, zword [rsi+0x500]);
-        vmovdqu16(zmm25, zword [rsi+0x540]);
-        vmovdqu16(zmm24, zword [rsi+0x580]);
-        vmovdqu16(zmm23, zword [rsi+0x5C0]);
-        vpbroadcastw(zmm14, word [rdx+0x14]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x16]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // seventh column
-        vmovdqu16(zmm26, zword [rsi+0x600]);
-        vmovdqu16(zmm25, zword [rsi+0x640]);
-        vmovdqu16(zmm24, zword [rsi+0x680]);
-        vmovdqu16(zmm23, zword [rsi+0x6C0]);
-        vpbroadcastw(zmm14, word [rdx+0x18]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x1A]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // eigth column
-        vmovdqu16(zmm26, zword [rsi+0x700]);
-        vmovdqu16(zmm25, zword [rsi+0x740]);
-        vmovdqu16(zmm24, zword [rsi+0x780]);
-        vmovdqu16(zmm23, zword [rsi+0x7C0]);
-        vpbroadcastw(zmm14, word [rdx+0x1C]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x1E]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // 9th column
-        vmovdqu16(zmm26, zword [rsi+0x800]);
-        vmovdqu16(zmm25, zword [rsi+0x840]);
-        vmovdqu16(zmm24, zword [rsi+0x880]);
-        vmovdqu16(zmm23, zword [rsi+0x8C0]);
-        vpbroadcastw(zmm14, word [rdx+0x20]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x22]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // 10th column
-        vmovdqu16(zmm26, zword [rsi+0x900]);
-        vmovdqu16(zmm25, zword [rsi+0x940]);
-        vmovdqu16(zmm24, zword [rsi+0x980]);
-        vmovdqu16(zmm23, zword [rsi+0x9C0]);
-        vpbroadcastw(zmm14, word [rdx+0x24]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x26]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // 11th column
-        vmovdqu16(zmm26, zword [rsi+0xD00]);
-        vmovdqu16(zmm25, zword [rsi+0xD40]);
-        vmovdqu16(zmm24, zword [rsi+0xD80]);
-        vmovdqu16(zmm23, zword [rsi+0xDC0]);
-        vpbroadcastw(zmm14, word [rdx+0x28]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x2A]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // 12th column
-        vmovdqu16(zmm26, zword [rsi+0xE00]);
-        vmovdqu16(zmm25, zword [rsi+0xE40]);
-        vmovdqu16(zmm24, zword [rsi+0xE80]);
-        vmovdqu16(zmm23, zword [rsi+0xEC0]);
-        vpbroadcastw(zmm14, word [rdx+0x2C]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x2E]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // 13th column
-        vmovdqu16(zmm26, zword [rsi+0xF00]);
-        vmovdqu16(zmm25, zword [rsi+0xF40]);
-        vmovdqu16(zmm24, zword [rsi+0xF80]);
-        vmovdqu16(zmm23, zword [rsi+0xFC0]);
-        vpbroadcastw(zmm14, word [rdx+0x30]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x32]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // 14th column
-        vmovdqu16(zmm26, zword [rsi+0x1000]);
-        vmovdqu16(zmm25, zword [rsi+0x1040]);
-        vmovdqu16(zmm24, zword [rsi+0x1080]);
-        vmovdqu16(zmm23, zword [rsi+0x10C0]);
-        vpbroadcastw(zmm14, word [rdx+0x34]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x36]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // 15th column
-        vmovdqu16(zmm26, zword [rsi+0x1100]);
-        vmovdqu16(zmm25, zword [rsi+0x1140]);
-        vmovdqu16(zmm24, zword [rsi+0x1180]);
-        vmovdqu16(zmm23, zword [rsi+0x11C0]);
-        vpbroadcastw(zmm14, word [rdx+0x38]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x3A]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // 16th column
-        vmovdqu16(zmm26, zword [rsi+0x1200]);
-        vmovdqu16(zmm25, zword [rsi+0x1240]);
-        vmovdqu16(zmm24, zword [rsi+0x1280]);
-        vmovdqu16(zmm23, zword [rsi+0x12C0]);
-        vpbroadcastw(zmm14, word [rdx+0x3C]);
-        my_vfmadd231w(zmm22, zmm30, zmm14);
-        my_vfmadd231w(zmm21, zmm29, zmm14);
-        my_vfmadd231w(zmm20, zmm28, zmm14);
-        my_vfmadd231w(zmm19, zmm27, zmm14);
-        vpbroadcastw(zmm14, word [rdx+0x3E]);
-        my_vfmadd231w(zmm18, zmm30, zmm14);
-        my_vfmadd231w(zmm17, zmm29, zmm14);
-        my_vfmadd231w(zmm16, zmm28, zmm14);
-        my_vfmadd231w(zmm15, zmm27, zmm14);
-        // final calculation steps, permute, fused negated multiply add
-        vpshufb(zmm18, zmm18, zmm0);
-        vpmullw(zmm18, zmm18, zmm31);
-        vpsubsw(zmm22, zmm22, zmm18);
+        vmovdqu16(zmm0, zword [r8]);      // zmm0 = swapPairs
+        vmovdqu16(zmm30, zword [rsi]); // load first column (a_b)
+        vmovdqu16(zmm1, zword [rdx]);
+        vmovdqu16(zmm2, zword [rdx+0x40]);
+        vmovdqu16(zmm3, zword [rdx+0x80]);
+        vmovdqu16(zmm4, zword [rdx+0xC0]);
+        vpshufb(zmm1, zmm1, zmm0); // swap pairs of vector
+        vpshufb(zmm2, zmm2, zmm0);
+        vpshufb(zmm3, zmm3, zmm0);
+        vpshufb(zmm4, zmm4, zmm0);
+        vmovdqu16(zword [rsp],zmm1); // store swapped vector into the stack
+        vmovdqu16(zword [rsp+0x40],zmm2);
+        vmovdqu16(zword [rsp+0x80],zmm3);
+        vmovdqu16(zword [rsp+0xC0],zmm4);
+        // first iteration use madd
+        vpbroadcastd(zmm5, dword [rdx]); // zmm5 = c_d (broadcast first two values from vec to all locations)
+        vpmullw(zmm5, zmm5, zmm31); // zmm5 = c_minus_d (negate every other value in zmm5)
+        vpmaddwd(zmm29, zmm30, zmm5); // zmm29 = real_res accumulator
+        vpbroadcastd(zmm6, dword [rsp]); /// zmm6 = d_c
+        vpmaddwd(zmm28, zmm30, zmm6); // zmm28 = imag_res accumulator
+        for(int i = 1; i < 64; i++) {
+            add(rsi, 0x40); // advance to next column of mat
+            add(rdx, 0x04); // advance 4 bytes to next complex number of vec
+            add(rsp, 0x04); // advance 4 bytes to next complex number of vec_swapped
+            vmovdqu16(zmm30, zword [rsi]);
+            vpbroadcastd(zmm5, dword [rdx]);
+            vpmullw(zmm5, zmm5, zmm31);
+            vpdpwssds(zmm29, zmm30, zmm5);
+            vpbroadcastd(zmm6, dword [rsp]); 
+            vpdpwssds(zmm28, zmm30, zmm6);
+        }
+        add(rsp, 0x04);
 
-        vpshufb(zmm17, zmm17, zmm0);
-        vpmullw(zmm17, zmm17, zmm31);
-        vpsubsw(zmm21, zmm21, zmm17);
-
-        vpshufb(zmm16, zmm16, zmm0);
-        vpmullw(zmm16, zmm16, zmm31);
-        vpsubsw(zmm20, zmm20, zmm16);
-
-        vpshufb(zmm15, zmm15, zmm0);
-        vpmullw(zmm15, zmm15, zmm31);
-        vpsubsw(zmm19, zmm19, zmm15);
-        // store in the array
-        vmovdqu16(zword [rcx],      zmm22);
-        vmovdqu16(zword [rcx+0x40], zmm21);
-        vmovdqu16(zword [rcx+0x80], zmm20);
-        vmovdqu16(zword [rcx+0xC0], zmm19);
+        vmovdqu64(zword [rcx], zmm29);
+        mov(eax,0x55555555);
+        kmovd(k1,eax);
+        vmovdqu16(zword [rcx+0x2] | k1, zmm28);
+        
+        // vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
+        // // Set up writemask k1
+        // mov(esi, 0xAAAAAAAA);
+        // kmovd(k1, esi);
+        // // Interleave real and imaginary
+        // vmovdqu16(zmm29 | k1, zmm28);
+        // // Write to memory
+        // vmovdqa64(zword [rcx], zmm29);
         ret();
     }
 };
@@ -362,494 +148,62 @@ struct JitFloatMatVec : Xbyak::CodeGenerator {
         : Xbyak::CodeGenerator(4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
     {  // Input parameters rdi={1, -1...}, rsi=mat, rdx=vec, rcx=res
         vpbroadcastq(zmm31, ptr [rdi]);
-        // 1
         vmovups(zmm30, zword [rsi]);
         vmovups(zmm29, zword [rsi+0x40]);
+        mov(eax, 0x1F);
+        vxorps(zmm26, zmm26, zmm26);
+        vxorps(zmm25, zmm25, zmm25);
+        vxorps(zmm24, zmm24, zmm24);
+        vxorps(zmm23, zmm23, zmm23);
+        vxorps(zmm22, zmm22, zmm22);
+        vxorps(zmm21, zmm21, zmm21);
+        vxorps(zmm20, zmm20, zmm20);
+        vxorps(zmm19, zmm19, zmm19);
+        L("L1");
+            vmovups(zmm28, zword [rsi+0x80]);
+            vmovups(zmm27, zword [rsi+0xC0]);
+            vbroadcastss(zmm18, dword [rdx]);
+            vfmadd231ps(zmm26, zmm30, zmm18);
+            vfmadd231ps(zmm25, zmm29, zmm18);
+            vbroadcastss(zmm18, dword [rdx+0x04]);
+            vfmadd231ps(zmm22, zmm30, zmm18);
+            vfmadd231ps(zmm21, zmm29, zmm18);
+            vmovups(zmm30, zword [rsi+0x100]);
+            vmovups(zmm29, zword [rsi+0x140]);
+            vbroadcastss(zmm18, dword [rdx+0x08]);
+            vfmadd231ps(zmm24, zmm28, zmm18);
+            vfmadd231ps(zmm23, zmm27, zmm18);
+            vbroadcastss(zmm18, dword [rdx+0x0C]);
+            vfmadd231ps(zmm20, zmm28, zmm18);
+            vfmadd231ps(zmm19, zmm27, zmm18);
+            add(rsi, 0x100);
+            add(rdx, 0x10);
+            sub(rax, 0x01);
+        jnle("L1");
         vmovups(zmm28, zword [rsi+0x80]);
         vmovups(zmm27, zword [rsi+0xC0]);
-        vbroadcastss(zmm14, dword [rdx]);
-        vmulps(zmm22, zmm30, zmm14);
-        vmulps(zmm21, zmm29, zmm14);
-        vmulps(zmm20, zmm28, zmm14);
-        vmulps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x04]);
-        vmulps(zmm18, zmm30, zmm14);
-        vmulps(zmm17, zmm29, zmm14);
-        vmulps(zmm16, zmm28, zmm14);
-        vmulps(zmm15, zmm27, zmm14);
-        // 2
-        vmovups(zmm26, zword [rsi+0x200]);
-        vmovups(zmm25, zword [rsi+0x240]);
-        vmovups(zmm24, zword [rsi+0x280]);
-        vmovups(zmm23, zword [rsi+0x2C0]);
-        vbroadcastss(zmm14, dword [rdx+0x08]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x0C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        //3
-        vmovups(zmm30, zword [rsi+0x400]);
-        vmovups(zmm29, zword [rsi+0x440]);
-        vmovups(zmm28, zword [rsi+0x480]);
-        vmovups(zmm27, zword [rsi+0x4C0]);
-        vbroadcastss(zmm14, dword [rdx+0x10]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x14]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        //4
-        vmovups(zmm26, zword [rsi+0x600]);
-        vmovups(zmm25, zword [rsi+0x640]);
-        vmovups(zmm24, zword [rsi+0x680]);
-        vmovups(zmm23, zword [rsi+0x6C0]);
-        vbroadcastss(zmm14, dword [rdx+0x18]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x1C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        //5
-        vmovups(zmm30, zword [rsi+0x800]);
-        vmovups(zmm29, zword [rsi+0x840]);
-        vmovups(zmm28, zword [rsi+0x880]);
-        vmovups(zmm27, zword [rsi+0x8C0]);
-        vbroadcastss(zmm14, dword [rdx+0x20]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x24]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        //6
-        vmovups(zmm26, zword [rsi+0xA00]);
-        vmovups(zmm25, zword [rsi+0xA40]);
-        vmovups(zmm24, zword [rsi+0xA80]);
-        vmovups(zmm23, zword [rsi+0xAC0]);
-        vbroadcastss(zmm14, dword [rdx+0x28]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x2C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        //7
-        vmovups(zmm30, zword [rsi+0xC00]);
-        vmovups(zmm29, zword [rsi+0xC40]);
-        vmovups(zmm28, zword [rsi+0xC80]);
-        vmovups(zmm27, zword [rsi+0xCC0]);
-        vbroadcastss(zmm14, dword [rdx+0x30]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x34]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        //8
-        vmovups(zmm26, zword [rsi+0xE00]);
-        vmovups(zmm25, zword [rsi+0xE40]);
-        vmovups(zmm24, zword [rsi+0xE80]);
-        vmovups(zmm23, zword [rsi+0xEC0]);
-        vbroadcastss(zmm14, dword [rdx+0x38]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x3C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        //9
-        vmovups(zmm30, zword [rsi+0x1000]);
-        vmovups(zmm29, zword [rsi+0x1040]);
-        vmovups(zmm28, zword [rsi+0x1080]);
-        vmovups(zmm27, zword [rsi+0x10C0]);
-        vbroadcastss(zmm14, dword [rdx+0x40]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x44]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        //10
-        vmovups(zmm26, zword [rsi+0x1200]);
-        vmovups(zmm25, zword [rsi+0x1240]);
-        vmovups(zmm24, zword [rsi+0x1280]);
-        vmovups(zmm23, zword [rsi+0x12C0]);
-        vbroadcastss(zmm14, dword [rdx+0x48]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x4C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        //11
-        vmovups(zmm30, zword [rsi+0x1400]);
-        vmovups(zmm29, zword [rsi+0x1440]);
-        vmovups(zmm28, zword [rsi+0x1480]);
-        vmovups(zmm27, zword [rsi+0x14C0]);
-        vbroadcastss(zmm14, dword [rdx+0x50]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x54]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        //12
-        vmovups(zmm26, zword [rsi+0x1600]);
-        vmovups(zmm25, zword [rsi+0x1640]);
-        vmovups(zmm24, zword [rsi+0x1680]);
-        vmovups(zmm23, zword [rsi+0x16C0]);
-        vbroadcastss(zmm14, dword [rdx+0x58]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x5C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        //13
-        vmovups(zmm30, zword [rsi+0x1800]);
-        vmovups(zmm29, zword [rsi+0x1840]);
-        vmovups(zmm28, zword [rsi+0x1880]);
-        vmovups(zmm27, zword [rsi+0x18C0]);
-        vbroadcastss(zmm14, dword [rdx+0x60]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x64]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        //14
-        vmovups(zmm26, zword [rsi+0x1A00]);
-        vmovups(zmm25, zword [rsi+0x1A40]);
-        vmovups(zmm24, zword [rsi+0x1A80]);
-        vmovups(zmm23, zword [rsi+0x1AC0]);
-        vbroadcastss(zmm14, dword [rdx+0x68]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x6C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        //15
-        vmovups(zmm30, zword [rsi+0x1C00]);
-        vmovups(zmm29, zword [rsi+0x1C40]);
-        vmovups(zmm28, zword [rsi+0x1C80]);
-        vmovups(zmm27, zword [rsi+0x1CC0]);
-        vbroadcastss(zmm14, dword [rdx+0x70]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x74]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        //16
-        vmovups(zmm26, zword [rsi+0x1E00]);
-        vmovups(zmm25, zword [rsi+0x1E40]);
-        vmovups(zmm24, zword [rsi+0x1E80]);
-        vmovups(zmm23, zword [rsi+0x1EC0]);
-        vbroadcastss(zmm14, dword [rdx+0x78]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x7C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        vpermilps(zmm18, zmm18, 0xB1);
-        vfnmadd231ps(zmm22, zmm18, zmm31);
-        vpermilps(zmm17, zmm17, 0xB1);
-        vfnmadd231ps(zmm21, zmm17, zmm31);
-        vpermilps(zmm16, zmm16, 0xB1);
-        vfnmadd231ps(zmm20, zmm16, zmm31);
-        vpermilps(zmm15, zmm15, 0xB1);
-        vfnmadd231ps(zmm19, zmm15, zmm31);
-        vmovups(zword [rcx], zmm22);
-        vmovups(zword [rcx+0x40], zmm21);
-        vmovups(zword [rcx+0x80], zmm20);
-        vmovups(zword [rcx+0xC0], zmm19);
-        vmovups(zmm30, zword [rsi+0x100]);
-        vmovups(zmm29, zword [rsi+0x140]);
-        vmovups(zmm28, zword [rsi+0x180]);
-        vmovups(zmm27, zword [rsi+0x1C0]);
-        vmovups(zmm26, zword [rsi+0x300]);
-        vmovups(zmm25, zword [rsi+0x340]);
-        vmovups(zmm24, zword [rsi+0x380]);
-        vmovups(zmm23, zword [rsi+0x3C0]);
-        vbroadcastss(zmm14, dword [rdx]);
-        vmulps(zmm22, zmm30, zmm14);
-        vmulps(zmm21, zmm29, zmm14);
-        vmulps(zmm20, zmm28, zmm14);
-        vmulps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x04]);
-        vmulps(zmm18, zmm30, zmm14);
-        vmulps(zmm17, zmm29, zmm14);
-        vmulps(zmm16, zmm28, zmm14);
-        vmulps(zmm15, zmm27, zmm14);
-        vmovups(zmm30, zword [rsi+0x500]);
-        vmovups(zmm29, zword [rsi+0x540]);
-        vmovups(zmm28, zword [rsi+0x580]);
-        vmovups(zmm27, zword [rsi+0x5C0]);
-        vbroadcastss(zmm14, dword [rdx+0x08]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x0C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        vmovups(zmm26, zword [rsi+0x700]);
-        vmovups(zmm25, zword [rsi+0x740]);
-        vmovups(zmm24, zword [rsi+0x780]);
-        vmovups(zmm23, zword [rsi+0x7C0]);
-        vbroadcastss(zmm14, dword [rdx+0x10]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x14]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        vmovups(zmm30, zword [rsi+0x900]);
-        vmovups(zmm29, zword [rsi+0x940]);
-        vmovups(zmm28, zword [rsi+0x980]);
-        vmovups(zmm27, zword [rsi+0x9C0]);
-        vbroadcastss(zmm14, dword [rdx+0x18]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x1C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        vmovups(zmm26, zword [rsi+0xB00]);
-        vmovups(zmm25, zword [rsi+0xB40]);
-        vmovups(zmm24, zword [rsi+0xB80]);
-        vmovups(zmm23, zword [rsi+0xBC0]);
-        vbroadcastss(zmm14, dword [rdx+0x20]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x24]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        vmovups(zmm30, zword [rsi+0xD00]);
-        vmovups(zmm29, zword [rsi+0xD40]);
-        vmovups(zmm28, zword [rsi+0xD80]);
-        vmovups(zmm27, zword [rsi+0xDC0]);
-        vbroadcastss(zmm14, dword [rdx+0x28]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x2C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        vmovups(zmm26, zword [rsi+0xF00]);
-        vmovups(zmm25, zword [rsi+0xF40]);
-        vmovups(zmm24, zword [rsi+0xF80]);
-        vmovups(zmm23, zword [rsi+0xFC0]);
-        vbroadcastss(zmm14, dword [rdx+0x30]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x34]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        vmovups(zmm30, zword [rsi+0x1100]);
-        vmovups(zmm29, zword [rsi+0x1140]);
-        vmovups(zmm28, zword [rsi+0x1180]);
-        vmovups(zmm27, zword [rsi+0x11C0]);
-        vbroadcastss(zmm14, dword [rdx+0x38]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x3C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        vmovups(zmm26, zword [rsi+0x1300]);
-        vmovups(zmm25, zword [rsi+0x1340]);
-        vmovups(zmm24, zword [rsi+0x1380]);
-        vmovups(zmm23, zword [rsi+0x13C0]);
-        vbroadcastss(zmm14, dword [rdx+0x40]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x44]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        vmovups(zmm30, zword [rsi+0x1500]);
-        vmovups(zmm29, zword [rsi+0x1540]);
-        vmovups(zmm28, zword [rsi+0x1580]);
-        vmovups(zmm27, zword [rsi+0x15C0]);
-        vbroadcastss(zmm14, dword [rdx+0x48]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x4C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        vmovups(zmm26, zword [rsi+0x1700]);
-        vmovups(zmm25, zword [rsi+0x1740]);
-        vmovups(zmm24, zword [rsi+0x1780]);
-        vmovups(zmm23, zword [rsi+0x17C0]);
-        vbroadcastss(zmm14, dword [rdx+0x50]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x54]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        vmovups(zmm30, zword [rsi+0x1900]);
-        vmovups(zmm29, zword [rsi+0x1940]);
-        vmovups(zmm28, zword [rsi+0x1980]);
-        vmovups(zmm27, zword [rsi+0x19C0]);
-        vbroadcastss(zmm14, dword [rdx+0x58]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x5C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        vmovups(zmm26, zword [rsi+0x1B00]);
-        vmovups(zmm25, zword [rsi+0x1B40]);
-        vmovups(zmm24, zword [rsi+0x1B80]);
-        vmovups(zmm23, zword [rsi+0x1BC0]);
-        vbroadcastss(zmm14, dword [rdx+0x60]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x64]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        vmovups(zmm30, zword [rsi+0x1D00]);
-        vmovups(zmm29, zword [rsi+0x1D40]);
-        vmovups(zmm28, zword [rsi+0x1D80]);
-        vmovups(zmm27, zword [rsi+0x1DC0]);
-        vbroadcastss(zmm14, dword [rdx+0x68]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x6C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        vmovups(zmm26, zword [rsi+0x1F00]);
-        vmovups(zmm25, zword [rsi+0x1F40]);
-        vmovups(zmm24, zword [rsi+0x1F80]);
-        vmovups(zmm23, zword [rsi+0x1FC0]);
-        vbroadcastss(zmm14, dword [rdx+0x70]);
-        vfmadd231ps(zmm22, zmm30, zmm14);
-        vfmadd231ps(zmm21, zmm29, zmm14);
-        vfmadd231ps(zmm20, zmm28, zmm14);
-        vfmadd231ps(zmm19, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x74]);
-        vfmadd231ps(zmm18, zmm30, zmm14);
-        vfmadd231ps(zmm17, zmm29, zmm14);
-        vfmadd231ps(zmm16, zmm28, zmm14);
-        vfmadd231ps(zmm15, zmm27, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x78]);
-        vfmadd231ps(zmm22, zmm26, zmm14);
-        vfmadd231ps(zmm21, zmm25, zmm14);
-        vfmadd231ps(zmm20, zmm24, zmm14);
-        vfmadd231ps(zmm19, zmm23, zmm14);
-        vbroadcastss(zmm14, dword [rdx+0x7C]);
-        vfmadd231ps(zmm18, zmm26, zmm14);
-        vfmadd231ps(zmm17, zmm25, zmm14);
-        vfmadd231ps(zmm16, zmm24, zmm14);
-        vfmadd231ps(zmm15, zmm23, zmm14);
-        vpermilps(zmm18, zmm18, 0xB1);
-        vfnmadd231ps(zmm22, zmm18, zmm31);
-        vpermilps(zmm17, zmm17, 0xB1);
-        vfnmadd231ps(zmm21, zmm17, zmm31);
-        vpermilps(zmm16, zmm16, 0xB1);
-        vfnmadd231ps(zmm20, zmm16, zmm31);
-        vpermilps(zmm15, zmm15, 0xB1);
-        vfnmadd231ps(zmm19, zmm15, zmm31);
-        vmovups(zword [rcx+0x100], zmm22);
-        vmovups(zword [rcx+0x140], zmm21);
-        vmovups(zword [rcx+0x180], zmm20);
-        vmovups(zword [rcx+0x1C0], zmm19);
+        vbroadcastss(zmm18, dword [rdx]);
+        vfmadd231ps(zmm26, zmm30, zmm18);
+        vfmadd231ps(zmm25, zmm29, zmm18);
+        vbroadcastss(zmm18, dword [rdx+0x04]);
+        vfmadd231ps(zmm22, zmm30, zmm18);
+        vfmadd231ps(zmm21, zmm29, zmm18);
+        vbroadcastss(zmm18, dword [rdx+0x08]);
+        vfmadd231ps(zmm24, zmm28, zmm18);
+        vfmadd231ps(zmm23, zmm27, zmm18);
+        vbroadcastss(zmm18, dword [rdx+0x0C]);
+        vfmadd231ps(zmm20, zmm28, zmm18);
+        vfmadd231ps(zmm19, zmm27, zmm18);
+        vaddps(zmm26, zmm26, zmm24);
+        vaddps(zmm22, zmm22, zmm20);
+        vaddps(zmm25, zmm25, zmm23);
+        vaddps(zmm21, zmm21, zmm19);
+        vpermilps(zmm22, zmm22, 0xB1);
+        vfnmadd231ps(zmm26, zmm22, zmm31);
+        vpermilps(zmm21, zmm21, 0xB1);
+        vfnmadd231ps(zmm25, zmm21, zmm31);
+        vmovups(zword [rcx], zmm26);
+        vmovups(zword [rcx+0x40], zmm25);
         vzeroupper();
         ret();
     }
@@ -962,15 +316,25 @@ int main(int argc, char** argv) {
     int mod = 10; //rand()%mod-range
     int range = mod/2;
     for(int i = 0; i < m*k; i++) {
-        mat16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
+        mat16[i] = {(int16_t)(i%mod-0+1), (int16_t)(i%mod-0)};
         mat[i] = {(float)mat16[i].real, (float)mat16[i].imag};
     }
     for(int i = 0; i < k; i++) {
-        vec16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
+        vec16[i] = {(int16_t)(i%mod-0), (int16_t)(i%mod-0+1)};
         vec[i] = {(float)vec16[i].real, (float)vec16[i].imag};
     }
+    // for(int i = 0; i < k; i++) {
+    //     for(int j = 0; j < m; j++)
+    //         std::cout << mat16[i*m+j];
+    //     std::cout << std::endl;
+    // }
+    // std::cout << std::endl;
+    // for(int i = 0; i < k; i++) std::cout << vec16[i];
+    // std::cout << std::endl;
 
     // Generate code at runtime (Just-in-Time) and output asm
+    double mklTime = runJITCGEMM((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res1, m, k, numIter);
+
     double start = getTime();
     JitFloatMatVec jit(m, k);
     jit.setProtectModeRE(); // Use Read/Exec mode for security
@@ -979,10 +343,9 @@ int main(int argc, char** argv) {
         matvec((void*)&broad, mat, vec, res);
     }
     double myFloatTime = timeSince(start);
-    double mklTime = runJITCGEMM((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res1, m, k, numIter);
     start = getTime();
-    for(int i = 0; i < numIter; i++)
-        matvecFloat_64x16((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res2);
+    // for(int i = 0; i < numIter; i++)
+    //     matvecFloat_64x16((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res2);
     double oldFloatTime = timeSince(start);
     start = getTime();
     JitInt16MatVec jit16(m, k);
@@ -993,20 +356,19 @@ int main(int argc, char** argv) {
     double myTime = timeSince(start);
 
     // Save .asm of each function
-    outputASM((void*)matvec, m, k, "/asm/myfloat");
-    outputASM((void*)matvec16, m, k, "/asm/myint16");
+    outputASM((void*)matvec, m, k, "./asm/myfloat");
+    outputASM((void*)matvec16, m, k, "./asm/myint16");
 
     // Output result
     for(int i = 0; i < m; i++) std::cout << res[i];
     std::cout << std::endl;
     for(int i = 0; i < m; i++) std::cout << res1[i];
     std::cout << std::endl;
-    for(int i = 0; i < m; i++) std::cout << res2[i];
-    std::cout << std::endl;
+    // for(int i = 0; i < m; i++) std::cout << res2[i];
+    // std::cout << std::endl;
     for(int i = 0; i < m; i++) std::cout << res16[i];
     std::cout << std::endl;
-    outputASM((void*)matvec, m, k, "myfloat");
-    outputASM((void*)matvec16, m, k, "myint16");
+
 
     printf("\n        ---------- \n\n");
     printf("     %ld iterations, (%ldx%ld) * (%ldx%d)\n", numIter, m, k, k, 1);
@@ -1014,6 +376,7 @@ int main(int argc, char** argv) {
     printf(" my JIT float: %.10f µs per iteration\n", myFloatTime/(double)numIter);
     printf("    old float: %.10f µs per iteration\n", oldFloatTime/(double)numIter);
     printf(" my JIT int16: %.10f µs per iteration\n", myTime/(double)numIter);
-    // Free allocated memory
-    free(mat); free(vec); free(res);
+    // // Free allocated memory
+    // free(mat); free(vec); free(res); free(res1); free(res2);
+    // free(mat16); free(vec16); free(res16);
 }
