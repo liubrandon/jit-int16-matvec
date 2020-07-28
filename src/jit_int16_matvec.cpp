@@ -8,11 +8,8 @@
 #include "mkl.h"
 #include "timer.hpp"
 #include <iomanip>
+#include <vector>
 #define DIE(...) fprintf(stderr, __VA_ARGS__); exit(1);
-#define my_vfmadd231w(accu, one, two) ({ \
-    vpmullw(one, one, two); \
-    vpaddw(accu, accu, one); \
-})
 struct Complex_float {
     float real;
     float imag;
@@ -88,120 +85,89 @@ __m512i swapPairs = _mm512_loadu_si512((const void*)temp);
 __m512i subAdd = _mm512_loadu_si512((const void*)temp1);
 struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)
-        : Xbyak::CodeGenerator(4*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
+        : Xbyak::CodeGenerator(50*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
     {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs (https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf)
-        vpbroadcastd(zmm31, dword [rdi]); //  rdi = &{1, -1}, zmm31
-        vmovdqu16(zmm0, zword [r8]);      // zmm0 = swapPairs
         sub(rsp, 0x04*k); // allocate 256 bytes to the stack (size of 64 Complex_int16)
-        // Set up writemask k1
-        mov(esi, 0xAAAAAAAA);
-        kmovd(k1, esi);
+        vpbroadcastd(zmm31, dword [rdi]); //  rdi = {1, -1, ...}
+        vmovdqu16(zmm0, zword [r8]);      // zmm0 = swapPairs
+
         for(int i = 0; i < k/16; i++) {
             // load vec into registers, swap pairs of vec, store swapped vector on the the stack
             vmovdqu16(zmm1, zword [rdx+(i*0x40)]);
             vpshufb(zmm1, zmm1, zmm0); 
             vmovdqu16(zword [rsp+(i*0x40)], zmm1); 
         }
-        for(int r = 0; r < m/16; r++) {
-            // first column use madd
-            vmovdqu16(zmm30, zword [rsi+(r*0x40)]); // load first column (a_b)
-            vpbroadcastd(zmm5, dword [rdx]); // zmm5 = c_d (broadcast first two values from vec to all locations)
-            vpmullw(zmm5, zmm5, zmm31); // zmm5 = c_minus_d (negate every other value in zmm5)
-            vpbroadcastd(zmm6, dword [rsp]); /// zmm6 = d_c
-            vpmaddwd(zmm29, zmm30, zmm5); // zmm29 = real_res accumulator
-            vpmaddwd(zmm28, zmm30, zmm6); // zmm28 = imag_res accumulator
-            
-            // rest of the columns use fused madd (vpdpwssds) 
-            for(int i = 1; i < k; i++) {
-                vmovdqu16(zmm30, zword [rsi+(i*0x4*m)+(r*0x40)]);
-                vpbroadcastd(zmm5, dword [rdx+(i*0x04)]);
-                vpmullw(zmm5, zmm5, zmm31);
-                vpbroadcastd(zmm6, dword [rsp+(i*0x04)]); 
-                vpdpwssds(zmm29, zmm30, zmm5);
-                vpdpwssds(zmm28, zmm30, zmm6);
+        // first 16 elements of column 1
+        vmovdqu16(zmm30, zword [rsi]); // load first column (a_b)
+        vpbroadcastd(zmm5, dword [rdx]); // zmm5 = c_d (broadcast first two values from vec to all locations)
+        vpmullw(zmm5, zmm5, zmm31); // zmm5 = c_minus_d (negate every other value in zmm5)
+        vpbroadcastd(zmm6, dword [rsp]); /// zmm6 = d_c
+        vpmaddwd(zmm29, zmm30, zmm5); // zmm29 = real_res accumulator
+        vpmaddwd(zmm28, zmm30, zmm6); // zmm28 = imag_res accumulator
+        if (m >= 32) {
+            vmovdqu16(zmm30, zword [rsi+0x40]);
+            vpmaddwd(zmm27, zmm30, zmm5);
+            vpmaddwd(zmm26, zmm30, zmm6);
+        }
+        if (m >= 48) {
+            vmovdqu16(zmm30, zword [rsi+0x80]);
+            vpmaddwd(zmm25, zmm30, zmm5);
+            vpmaddwd(zmm24, zmm30, zmm6);
+        }
+        if (m >= 64) {
+            vmovdqu16(zmm30, zword [rsi+0xC0]);
+            vpmaddwd(zmm23, zmm30, zmm5);
+            vpmaddwd(zmm22, zmm30, zmm6);
+        }        
+        int rowsize = m*4;
+        for(int i = 1; i < k; i++) {
+            vmovdqu16(zmm30, zword [rsi+(rowsize*i)]);
+            vpbroadcastd(zmm5, dword [rdx+(0x04*i)]);
+            vpmullw(zmm5, zmm5, zmm31);
+            vpbroadcastd(zmm6, dword [rsp+(0x04*i)]); 
+            vpdpwssds(zmm29, zmm30, zmm5);
+            vpdpwssds(zmm28, zmm30, zmm6);
+            if (m >= 32) {
+                vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x40]);
+                vpdpwssds(zmm27, zmm30, zmm5);
+                vpdpwssds(zmm26, zmm30, zmm6);
+            } 
+            if (m >= 48) {
+                vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x80]);
+                vpdpwssds(zmm25, zmm30, zmm5);
+                vpdpwssds(zmm24, zmm30, zmm6);
+            } 
+            if (m >= 64) {
+                vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0xC0]);
+                vpdpwssds(zmm23, zmm30, zmm5);
+                vpdpwssds(zmm22, zmm30, zmm6);
             }
-            // Two stores approach
-            // vmovdqu64(zword [rcx], zmm29);
-            // mov(eax,0x55555555);
-            // kmovd(k1,eax);
-            // vmovdqu16(zword [rcx+0x2] | k1, zmm28);
-            
-            // Shift, blend, and store approach
-            vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
-            // Interleave real and imaginary
-            vmovdqu16(zmm29 | k1, zmm28);
-            // Write to memory
-            vmovdqa64(zword [rcx+(r*0x40)], zmm29);
-            // deallocate stack space and return
         }
         add(rsp, 0x04*k);
-        ret();
-    }
-};
 
-Complex_float broad = {1.0,-1.0};
-struct JitFloatMatVec : Xbyak::CodeGenerator {
-    JitFloatMatVec(int m, int k)
-        : Xbyak::CodeGenerator(4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
-    {  // Input parameters rdi={1, -1...}, rsi=mat, rdx=vec, rcx=res
-        vpbroadcastq(zmm31, ptr [rdi]);
-        vmovups(zmm30, zword [rsi]);
-        vmovups(zmm29, zword [rsi+0x40]);
-        mov(eax, 0x1F);
-        vxorps(zmm26, zmm26, zmm26);
-        vxorps(zmm25, zmm25, zmm25);
-        vxorps(zmm24, zmm24, zmm24);
-        vxorps(zmm23, zmm23, zmm23);
-        vxorps(zmm22, zmm22, zmm22);
-        vxorps(zmm21, zmm21, zmm21);
-        vxorps(zmm20, zmm20, zmm20);
-        vxorps(zmm19, zmm19, zmm19);
-        L("L1");
-            vmovups(zmm28, zword [rsi+0x80]);
-            vmovups(zmm27, zword [rsi+0xC0]);
-            vbroadcastss(zmm18, dword [rdx]);
-            vfmadd231ps(zmm26, zmm30, zmm18);
-            vfmadd231ps(zmm25, zmm29, zmm18);
-            vbroadcastss(zmm18, dword [rdx+0x04]);
-            vfmadd231ps(zmm22, zmm30, zmm18);
-            vfmadd231ps(zmm21, zmm29, zmm18);
-            vmovups(zmm30, zword [rsi+0x100]);
-            vmovups(zmm29, zword [rsi+0x140]);
-            vbroadcastss(zmm18, dword [rdx+0x08]);
-            vfmadd231ps(zmm24, zmm28, zmm18);
-            vfmadd231ps(zmm23, zmm27, zmm18);
-            vbroadcastss(zmm18, dword [rdx+0x0C]);
-            vfmadd231ps(zmm20, zmm28, zmm18);
-            vfmadd231ps(zmm19, zmm27, zmm18);
-            add(rsi, 0x100);
-            add(rdx, 0x10);
-            sub(rax, 0x01);
-        jnle("L1");
-        vmovups(zmm28, zword [rsi+0x80]);
-        vmovups(zmm27, zword [rsi+0xC0]);
-        vbroadcastss(zmm18, dword [rdx]);
-        vfmadd231ps(zmm26, zmm30, zmm18);
-        vfmadd231ps(zmm25, zmm29, zmm18);
-        vbroadcastss(zmm18, dword [rdx+0x04]);
-        vfmadd231ps(zmm22, zmm30, zmm18);
-        vfmadd231ps(zmm21, zmm29, zmm18);
-        vbroadcastss(zmm18, dword [rdx+0x08]);
-        vfmadd231ps(zmm24, zmm28, zmm18);
-        vfmadd231ps(zmm23, zmm27, zmm18);
-        vbroadcastss(zmm18, dword [rdx+0x0C]);
-        vfmadd231ps(zmm20, zmm28, zmm18);
-        vfmadd231ps(zmm19, zmm27, zmm18);
-        vaddps(zmm26, zmm26, zmm24);
-        vaddps(zmm22, zmm22, zmm20);
-        vaddps(zmm25, zmm25, zmm23);
-        vaddps(zmm21, zmm21, zmm19);
-        vpermilps(zmm22, zmm22, 0xB1);
-        vfnmadd231ps(zmm26, zmm22, zmm31);
-        vpermilps(zmm21, zmm21, 0xB1);
-        vfnmadd231ps(zmm25, zmm21, zmm31);
-        vmovups(zword [rcx], zmm26);
-        vmovups(zword [rcx+0x40], zmm25);
-        vzeroupper();
+        vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
+        // Set up writemask k1
+        mov(esi, 0xAAAAAAAA);
+        kmovd(k1, esi);
+        // Interleave real and imaginary
+        vmovdqu16(zmm29 | k1, zmm28);
+        // Write to memory
+        vmovdqa64(zword [rcx], zmm29);
+        if (m >= 32) {
+            vpslld(zmm26, zmm26, 0x10); // shift imag_res 16 bits left
+            vmovdqu16(zmm27 | k1, zmm26);
+            vmovdqa64(zword [rcx+0x40], zmm27);
+        }
+        if (m >= 48) {
+            vpslld(zmm24, zmm24, 0x10); // shift imag_res 16 bits left
+            vmovdqu16(zmm25 | k1, zmm24);
+            vmovdqa64(zword [rcx+0x80], zmm25);
+        }
+        if (m >= 64) {
+            vpslld(zmm22, zmm22, 0x10); // shift imag_res 16 bits left
+            vmovdqu16(zmm23 | k1, zmm22);
+            vmovdqa64(zword [rcx+0xC0], zmm23);
+        }
         ret();
     }
 };
@@ -228,56 +194,15 @@ double runJITCGEMM(MKL_Complex8* a, MKL_Complex8* b, MKL_Complex8* c, MKL_INT m,
     return ret;
 }
 
-void matvecFloat_64x16(const MKL_Complex8* mat, const MKL_Complex8* vec, MKL_Complex8* res) {
-    __m512 a_b, a_b1, a_b2, a_b3, a_b4, c_c, d_d, ac_bc, ad_bd, bd_ad, bd_ad1,bd_ad2,bd_ad3;
-    __m512 ac_bc_accu, ad_bd_accu, ac_bc_accu1, ad_bd_accu1, ac_bc_accu2, ad_bd_accu2, ac_bc_accu3, ad_bd_accu3, ac_bc_accu4, ad_bd_accu4;
-    MKL_Complex8 val;
-    MKL_Complex8 broad = {1.0, -1.0};
-    __m512 addSub = (__m512)_mm512_broadcastsd_pd(*(__m128d*)&broad);
-    for(int r = 0; r < 64; r+=32) {
-        a_b  = _mm512_loadu_ps((const void*)&mat[r+0]);
-        a_b1 = _mm512_loadu_ps((const void*)&mat[r+8]);
-        a_b2 = _mm512_loadu_ps((const void*)&mat[r+16]);
-        a_b3 = _mm512_loadu_ps((const void*)&mat[r+24]);
-        c_c = _mm512_set1_ps(vec[0].real);
-        ac_bc_accu =  _mm512_mul_ps(a_b, c_c);
-        ac_bc_accu1 = _mm512_mul_ps(a_b1, c_c);
-        ac_bc_accu2 = _mm512_mul_ps(a_b2, c_c);
-        ac_bc_accu3 = _mm512_mul_ps(a_b3, c_c);
-        d_d = _mm512_set1_ps(vec[0].imag);
-        ad_bd_accu =  _mm512_mul_ps(a_b, d_d);
-        ad_bd_accu1 = _mm512_mul_ps(a_b1, d_d);
-        ad_bd_accu2 = _mm512_mul_ps(a_b2, d_d);
-        ad_bd_accu3 = _mm512_mul_ps(a_b3, d_d);
-        for(int c = 1; c < 16; c++) {
-            a_b1 = _mm512_loadu_ps((const void*)&mat[r+c*64+8]);
-            a_b =  _mm512_loadu_ps((const void*)&mat[r+c*64]);
-            a_b2 = _mm512_loadu_ps((const void*)&mat[r+c*64+16]);
-            a_b3 = _mm512_loadu_ps((const void*)&mat[r+c*64+24]);
-            c_c = _mm512_set1_ps(vec[c].real);
-            ac_bc_accu =  _mm512_fmadd_ps(a_b, c_c, ac_bc_accu);
-            ac_bc_accu1 = _mm512_fmadd_ps(a_b1, c_c, ac_bc_accu1);
-            ac_bc_accu2 = _mm512_fmadd_ps(a_b2, c_c, ac_bc_accu2);
-            ac_bc_accu3 = _mm512_fmadd_ps(a_b3, c_c, ac_bc_accu3);
-            d_d = _mm512_set1_ps(vec[c].imag);
-            ad_bd_accu =  _mm512_fmadd_ps(a_b, d_d, ad_bd_accu);
-            ad_bd_accu1 = _mm512_fmadd_ps(a_b1, d_d, ad_bd_accu1);
-            ad_bd_accu2 = _mm512_fmadd_ps(a_b2, d_d, ad_bd_accu2);
-            ad_bd_accu3 = _mm512_fmadd_ps(a_b3, d_d, ad_bd_accu3);
-        }
-        bd_ad = _mm512_permute_ps(ad_bd_accu, 0xB1);
-        ac_bc_accu = _mm512_fnmadd_ps(bd_ad, addSub, ac_bc_accu);
-        bd_ad1 = _mm512_permute_ps(ad_bd_accu1, 0xB1);
-        ac_bc_accu1 = _mm512_fnmadd_ps(bd_ad1, addSub, ac_bc_accu1);
-        bd_ad2 = _mm512_permute_ps(ad_bd_accu2, 0xB1);
-        ac_bc_accu2 = _mm512_fnmadd_ps(bd_ad2, addSub, ac_bc_accu2);
-        bd_ad3 = _mm512_permute_ps(ad_bd_accu3, 0xB1);
-        ac_bc_accu3 = _mm512_fnmadd_ps(bd_ad3, addSub, ac_bc_accu3);
-        _mm512_storeu_ps(res+r, ac_bc_accu);
-        _mm512_storeu_ps(res+r+8, ac_bc_accu1);
-        _mm512_storeu_ps(res+r+16, ac_bc_accu2);
-        _mm512_storeu_ps(res+r+24, ac_bc_accu3);
-    }
+std::vector<std::string> dimensions;
+std::vector<double> armaTimes, cgemvTimes, cgemmTimes, jitcgemmTimes, cgemvTimes_row, jitcgemmTimes_row;
+void outputCSV() {
+    std::ofstream outFile;
+    outFile.open("results.csv");
+    outFile << "Dimensions,Armadillo cgemv,cgemv,cgemv row major,cgemm,JIT cgemm,JIT cgemm row major\n";
+    for(int i = 0; i < dimensions.size(); i++)
+        outFile << dimensions[i] << "," << armaTimes[i] << "," << cgemvTimes[i] << "," << cgemvTimes_row[i] << "," << cgemmTimes[i] << "," << jitcgemmTimes[i] << "," << jitcgemmTimes_row[i] << ",\n";
+    outFile.close();
 }
 
 int main(int argc, char** argv) {
@@ -329,9 +254,6 @@ int main(int argc, char** argv) {
     // for(int i = 0; i < k; i++) std::cout << vec16[i];
     // std::cout << std::endl;
 
-    // Generate code at runtime (Just-in-Time) and output asm
-    double mklTime = runJITCGEMM((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res1, m, k, numIter);
-
     double start = getTime();
     // JitFloatMatVec jit(m, k);
     // jit.setProtectModeRE(); // Use Read/Exec mode for security
@@ -352,9 +274,12 @@ int main(int argc, char** argv) {
         matvec16((void*)&broad16, mat16, vec16, res16, (void*)&swapPairs);
     double myTime = timeSince(start);
 
+    // Generate code at runtime (Just-in-Time) and output asm
+    double mklTime = runJITCGEMM((MKL_Complex8*)mat, (MKL_Complex8*)vec, (MKL_Complex8*)res1, m, k, numIter);
+
     // Save .asm of each function
     //outputASM((void*)matvec, m, k, "./asm/myfloat");
-    outputASM((void*)matvec16, m, k, "./asm/myint16");
+    //outputASM((void*)matvec16, m, k, "./asm/myint16");
 
     // Output result
     // for(int i = 0; i < m; i++) std::cout << res[i];
@@ -370,8 +295,8 @@ int main(int argc, char** argv) {
     printf("\n        ---------- \n\n");
     printf("     %ld iterations, (%ldx%ld) * (%ldx%d)\n", numIter, m, k, k, 1);
     printf("MKL JIT cgemm: %.10f µs per iteration\n", mklTime/(double)numIter);
-    printf(" my JIT float: %.10f µs per iteration\n", myFloatTime/(double)numIter);
-    printf("    old float: %.10f µs per iteration\n", oldFloatTime/(double)numIter);
+    // printf(" my JIT float: %.10f µs per iteration\n", myFloatTime/(double)numIter);
+    // printf("    old float: %.10f µs per iteration\n", oldFloatTime/(double)numIter);
     printf(" my JIT int16: %.10f µs per iteration\n", myTime/(double)numIter);
     #define RESET   "\033[0m" // Terminal color codes
     #define BOLDGREEN   "\033[1m\033[32m" 

@@ -1,5 +1,5 @@
 import re
-# Takes in a .asm file from Zydis output and reformats the assembly for Xbyak
+# Takes in a .asm file from Zydis output and reformats the assembly into C++ for Xbyak
 f = open("./asm/mkl16x64.asm", "r")
 text = f.read()
 for line in text.splitlines():
