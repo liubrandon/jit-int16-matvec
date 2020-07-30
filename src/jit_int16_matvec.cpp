@@ -87,7 +87,7 @@ __m512i swapPairs = _mm512_loadu_si512((const void*)temp);
 __m512i subAdd = _mm512_loadu_si512((const void*)temp1);
 struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)
-        : Xbyak::CodeGenerator(100*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
+        : Xbyak::CodeGenerator(200*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
     {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs (https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf)
         sub(rsp, 0x04*k); // allocate 256 bytes to the stack (size of 64 Complex_int16)
         vpbroadcastd(zmm31, dword [rdi]); //  rdi = {1, -1, ...}
@@ -141,6 +141,26 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
             vpmaddwd(zmm15, zmm30, zmm5);
             vpmaddwd(zmm14, zmm30, zmm6);
         }        
+        if (m >= 144) {
+            vmovdqu16(zmm30, zword [rsi+0x200]);
+            vpmaddwd(zmm13, zmm30, zmm5);
+            vpmaddwd(zmm12, zmm30, zmm6);
+        }
+        if (m >= 160) {
+            vmovdqu16(zmm30, zword [rsi+0x240]);
+            vpmaddwd(zmm11, zmm30, zmm5);
+            vpmaddwd(zmm10, zmm30, zmm6);
+        }
+        if (m >= 176) {
+            vmovdqu16(zmm30, zword [rsi+0x280]);
+            vpmaddwd(zmm9 , zmm30, zmm5);
+            vpmaddwd(zmm8 , zmm30, zmm6);
+        }        
+        if (m >= 192) {
+            vmovdqu16(zmm30, zword [rsi+0x2C0]);
+            vpmaddwd(zmm7 , zmm30, zmm5);
+            vpmaddwd(zmm4 , zmm30, zmm6);
+        }        
         int rowsize = m*4;
         for(int i = 1; i < k; i++) {
             vmovdqu16(zmm30, zword [rsi+(rowsize*i)]);
@@ -183,6 +203,26 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
                 vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x1C0]);
                 vpdpwssds(zmm15, zmm30, zmm5);
                 vpdpwssds(zmm14, zmm30, zmm6);
+            }
+            if (m >= 144) {
+                vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x200]);
+                vpdpwssds(zmm13, zmm30, zmm5);
+                vpdpwssds(zmm12, zmm30, zmm6);
+            } 
+            if (m >= 160) {
+                vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x240]);
+                vpdpwssds(zmm11, zmm30, zmm5);
+                vpdpwssds(zmm10, zmm30, zmm6);
+            } 
+            if (m >= 176) {
+                vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x280]);
+                vpdpwssds(zmm9 , zmm30, zmm5);
+                vpdpwssds(zmm8 , zmm30, zmm6);
+            }
+            if (m >= 192) {
+                vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x2C0]);
+                vpdpwssds(zmm7 , zmm30, zmm5);
+                vpdpwssds(zmm4 , zmm30, zmm6);
             }
         }
         add(rsp, 0x04*k);
@@ -229,6 +269,26 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
             vpslld(zmm14, zmm14, 0x10); // shift imag_res 16 bits left
             vmovdqu16(zmm15 | k1, zmm14);
             vmovdqa64(zword [rcx+0x1C0], zmm15);
+        }
+        if (m >= 144) {
+            vpslld(zmm12, zmm12, 0x10); // shift imag_res 16 bits left
+            vmovdqu16(zmm13 | k1, zmm12);
+            vmovdqa64(zword [rcx+0x200], zmm13);
+        }
+        if (m >= 160) {
+            vpslld(zmm10, zmm10, 0x10); // shift imag_res 16 bits left
+            vmovdqu16(zmm11 | k1, zmm10);
+            vmovdqa64(zword [rcx+0x240], zmm11);
+        }
+        if (m >= 176) {
+            vpslld(zmm8, zmm8, 0x10); // shift imag_res 16 bits left
+            vmovdqu16(zmm9 | k1, zmm8);
+            vmovdqa64(zword [rcx+0x280], zmm9);
+        }
+        if (m >= 192) {
+            vpslld(zmm4, zmm4, 0x10); // shift imag_res 16 bits left
+            vmovdqu16(zmm7 | k1, zmm4);
+            vmovdqa64(zword [rcx+0x2C0], zmm7);
         }
         ret();
     }
@@ -340,7 +400,7 @@ void benchDimensions(long m, long k, long numIter) {
 int main(int argc, char** argv) {
     srand(time(0));
     long numIter = 100000;
-    for(long m = 128; m <= 128; m+=16) {
+    for(long m = 144; m <= 192; m+=16) {
         for(long k = 16; k <= 1024; k += 16)
             benchDimensions(m, k, numIter);    
         outputCSV(std::to_string(m));
