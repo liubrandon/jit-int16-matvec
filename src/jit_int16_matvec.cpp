@@ -238,7 +238,6 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
                 }
             }
             add(rsp, 0x04*k);
-
             vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
             // Set up writemask k1
             mov(esi, 0xAAAAAAAA);
@@ -382,17 +381,20 @@ void benchDimensions(long m, long k, long numIter, bool assertEqual) {
         vec16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
         vec[i] = {(float)vec16[i].real, (float)vec16[i].imag};
     }
+    double mklTime = 0.0;
     double start = getTime();
-    JitInt16MatVec jit16(m, k);
-    jit16.setProtectModeRE(); // Use Read/Exec mode for security
-    void (*matvec16)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs) = jit16.getCode<void (*)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs)>();
-    for(int i = 0; i < numIter; i++)
-        matvec16((void*)&broad16, mat16, vec16, res16, (void*)&swapPairs);
+    // Uncomment below for int16
+    // JitInt16MatVec jit16(m, k);
+    // jit16.setProtectModeRE(); // Use Read/Exec mode for security
+    // void (*matvec16)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs) = jit16.getCode<void (*)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs)>();
+    // for(int i = 0; i < numIter; i++)
+    //     matvec16((void*)&broad16, mat16, vec16, res16, (void*)&swapPairs);
     double myTime = timeSince(start);
-    // Generate code at runtime (Just-in-Time) and output asm
-    double mklTime = runJITCGEMM(mat, vec, res, m, k, numIter);
+
+    // Uncomment below for MKL
+    mklTime = runJITCGEMM(mat, vec, res, m, k, numIter);
     // Save .asm of my function (MKL .asm is saved in runJITCGEMM)
-    outputASM((void*)matvec16, m, k, std::string("./asm/") + std::to_string(m) + std::string("xK/"), "_myint16");
+    // outputASM((void*)matvec16, m, k, std::string("./asm/") + std::to_string(m) + std::string("xK/"), "_myint16");
     // Output result
     // for(int i = 0; i < m; i++) std::cout << "(" << std::setprecision(0) << res[i].real << "," << std::setprecision(0) << res[i].imag << ")";
     // std::cout << std::endl;
@@ -407,7 +409,7 @@ void benchDimensions(long m, long k, long numIter, bool assertEqual) {
     std::cout << "  " << BOLDGREEN << std::fixed << std::setprecision(2) << mklTime/myTime << "x" << RESET << " MKL JIT cgemm" << std::endl;
     std::cout << "---------------------------------\n" << std::endl;
     // Assert resulting values are equal
-    if(assertEqual) assert(vectorsEqual((float*)res, (int16_t*)res16, m));
+    //if(assertEqual) assert(vectorsEqual((float*)res, (int16_t*)res16, m));
     dimensions.push_back(std::to_string(m) + "x" + std::to_string(k));
     mklTimes.push_back(mklTime/(double)numIter);
     myTimes.push_back(myTime/(double)numIter);
@@ -419,10 +421,10 @@ void benchDimensions(long m, long k, long numIter, bool assertEqual) {
 int main(int argc, char** argv) {
     srand(time(0));
     long numIter = 10000;
-    for(long m = 224; m <= 256; m+=16) {
+    //for(long m = 224; m <= 256; m+=16) {
         //for(long k = 16; k <= 1024; k += 16)
-            benchDimensions(m, m, numIter, argc==1);    
-    }
+            benchDimensions(128, 128, numIter, argc==1);    
+    //}
     outputCSV("squares");
-
+    return 0;
 }
