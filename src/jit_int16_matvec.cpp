@@ -88,7 +88,7 @@ __m512i subAdd = _mm512_loadu_si512((const void*)temp1);
 struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)
         : Xbyak::CodeGenerator(200*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
-    {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs (https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf)
+    {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs
         int rowsize = m*4;
         sub(rsp, 0x04*k); // allocate 256 bytes to the stack (size of 64 Complex_int16)
         vpbroadcastd(zmm31, dword [rdi]); //  rdi = {1, -1, ...}
@@ -99,231 +99,214 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
             vpshufb(zmm1, zmm1, zmm0); 
             vmovdqu16(zword [rsp+(i*0x40)], zmm1); 
         }
-        if (m == 16) {
-            vmovdqu16(zmm30, zword [rsi]); // First column
-            vxorps(zmm29,zmm29,zmm29);
-            vxorps(zmm28,zmm28,zmm28);
-            for(int i = 0; i < k; i += 2) {
-                vmovdqu16(zmm0, zword [rsi+(rowsize*(i+1))]);
-                vpbroadcastd(zmm5, dword [rdx+(0x04*i)]);
-                vpmullw(zmm5, zmm5, zmm31);
-                vpdpwssds(zmm29, zmm30, zmm5);
-                vpbroadcastd(zmm6, dword [rsp+(0x04*i)]); 
-                vpdpwssds(zmm28, zmm30, zmm6);
-                if(i != k-2) vmovdqu16(zmm30, zword [rsi+(rowsize*(i+2))]);
-                vpbroadcastd(zmm5, dword [rdx+(0x04*(i+1))]);
-                vpmullw(zmm5, zmm5, zmm31);
-                vpdpwssds(zmm29, zmm0, zmm5);
-                vpbroadcastd(zmm6, dword [rsp+(0x04*(i+1))]); 
-                vpdpwssds(zmm28, zmm0, zmm6);
-            }
-        }
-        else {
+        int inc = 0; // overwritten in the loop
+        for(int r = 0; r < m; r += inc) {
             // first 16 elements of column 1
-            vmovdqu16(zmm30, zword [rsi]); // load first column (a_b)
+            vmovdqu16(zmm30, zword [rsi+(r*0x04)]); // load first column (a_b)
             vpbroadcastd(zmm5, dword [rdx]); // zmm5 = c_d (broadcast first two values from vec to all locations)
             vpmullw(zmm5, zmm5, zmm31); // zmm5 = c_minus_d (negate every other value in zmm5)
             vpbroadcastd(zmm6, dword [rsp]); /// zmm6 = d_c
             vpmaddwd(zmm29, zmm30, zmm5); // zmm29 = real_res accumulator
             vpmaddwd(zmm28, zmm30, zmm6); // zmm28 = imag_res accumulator
-            if (m >= 32) {
-                vmovdqu16(zmm30, zword [rsi+0x40]);
+            inc = 16;
+            if (m-r >= 32) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x40]);
                 vpmaddwd(zmm27, zmm30, zmm5);
-                vpmaddwd(zmm26, zmm30, zmm6);
+                vpmaddwd(zmm26, zmm30, zmm6); inc = 32;
             }
-            if (m >= 48) {
-                vmovdqu16(zmm30, zword [rsi+0x80]);
+            if (m-r >= 48) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x80]);
                 vpmaddwd(zmm25, zmm30, zmm5);
-                vpmaddwd(zmm24, zmm30, zmm6);
+                vpmaddwd(zmm24, zmm30, zmm6); inc = 48;
             }
-            if (m >= 64) {
-                vmovdqu16(zmm30, zword [rsi+0xC0]);
+            if (m-r >= 64) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0xC0]);
                 vpmaddwd(zmm23, zmm30, zmm5);
-                vpmaddwd(zmm22, zmm30, zmm6);
+                vpmaddwd(zmm22, zmm30, zmm6); inc = 64;
             }        
-            if (m >= 80) {
-                vmovdqu16(zmm30, zword [rsi+0x100]);
+            if (m-r >= 80) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x100]);
                 vpmaddwd(zmm21, zmm30, zmm5);
-                vpmaddwd(zmm20, zmm30, zmm6);
+                vpmaddwd(zmm20, zmm30, zmm6); inc = 80;
             }
-            if (m >= 96) {
-                vmovdqu16(zmm30, zword [rsi+0x140]);
+            if (m-r >= 96) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x140]);
                 vpmaddwd(zmm19, zmm30, zmm5);
-                vpmaddwd(zmm18, zmm30, zmm6);
+                vpmaddwd(zmm18, zmm30, zmm6); inc = 96;
             }
-            if (m >= 112) {
-                vmovdqu16(zmm30, zword [rsi+0x180]);
+            if (m-r >= 112) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x180]);
                 vpmaddwd(zmm17, zmm30, zmm5);
-                vpmaddwd(zmm16, zmm30, zmm6);
+                vpmaddwd(zmm16, zmm30, zmm6); inc = 112;
             }        
-            if (m >= 128) {
-                vmovdqu16(zmm30, zword [rsi+0x1C0]);
+            if (m-r >= 128) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x1C0]);
                 vpmaddwd(zmm15, zmm30, zmm5);
-                vpmaddwd(zmm14, zmm30, zmm6);
+                vpmaddwd(zmm14, zmm30, zmm6); inc = 128;
             }        
-            if (m >= 144) {
-                vmovdqu16(zmm30, zword [rsi+0x200]);
+            if (m-r >= 144) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x200]);
                 vpmaddwd(zmm13, zmm30, zmm5);
-                vpmaddwd(zmm12, zmm30, zmm6);
+                vpmaddwd(zmm12, zmm30, zmm6); inc = 144;
             }
-            if (m >= 160) {
-                vmovdqu16(zmm30, zword [rsi+0x240]);
+            if (m-r >= 160) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x240]);
                 vpmaddwd(zmm11, zmm30, zmm5);
-                vpmaddwd(zmm10, zmm30, zmm6);
+                vpmaddwd(zmm10, zmm30, zmm6); inc = 160;
             }
-            if (m >= 176) {
-                vmovdqu16(zmm30, zword [rsi+0x280]);
+            if (m-r >= 176) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x280]);
                 vpmaddwd(zmm9 , zmm30, zmm5);
-                vpmaddwd(zmm8 , zmm30, zmm6);
+                vpmaddwd(zmm8 , zmm30, zmm6); inc = 176;
             }        
-            if (m >= 192) {
-                vmovdqu16(zmm30, zword [rsi+0x2C0]);
+            if (m-r >= 192) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x2C0]);
                 vpmaddwd(zmm7 , zmm30, zmm5);
-                vpmaddwd(zmm4 , zmm30, zmm6);
+                vpmaddwd(zmm4 , zmm30, zmm6); inc = 192;
             }        
-            if (m >= 208) {
-                vmovdqu16(zmm30, zword [rsi+0x300]);
+            if (m-r >= 208) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x300]);
                 vpmaddwd(zmm3 , zmm30, zmm5);
-                vpmaddwd(zmm2 , zmm30, zmm6);
+                vpmaddwd(zmm2 , zmm30, zmm6); inc = 208;
             } 
-            for(int i = 0; i < k; i++) {
-                vmovdqu16(zmm30, zword [rsi+(rowsize*i)]);
+            for(int i = 1; i < k; i++) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)]);
                 vpbroadcastd(zmm5, dword [rdx+(0x04*i)]);
                 vpmullw(zmm5, zmm5, zmm31);
                 vpdpwssds(zmm29, zmm30, zmm5);
                 vpbroadcastd(zmm6, dword [rsp+(0x04*i)]); 
                 vpdpwssds(zmm28, zmm30, zmm6);
-                if (m >= 32) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x40]);
+                if (m-r >= 32) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x40]);
                     vpdpwssds(zmm27, zmm30, zmm5);
                     vpdpwssds(zmm26, zmm30, zmm6);
                 } 
-                if (m >= 48) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x80]);
+                if (m-r >= 48) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x80]);
                     vpdpwssds(zmm25, zmm30, zmm5);
                     vpdpwssds(zmm24, zmm30, zmm6);
                 } 
-                if (m >= 64) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0xC0]);
+                if (m-r >= 64) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0xC0]);
                     vpdpwssds(zmm23, zmm30, zmm5);
                     vpdpwssds(zmm22, zmm30, zmm6);
                 }
-                if (m >= 80) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x100]);
+                if (m-r >= 80) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x100]);
                     vpdpwssds(zmm21, zmm30, zmm5);
                     vpdpwssds(zmm20, zmm30, zmm6);
                 } 
-                if (m >= 96) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x140]);
+                if (m-r >= 96) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x140]);
                     vpdpwssds(zmm19, zmm30, zmm5);
                     vpdpwssds(zmm18, zmm30, zmm6);
                 } 
-                if (m >= 112) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x180]);
+                if (m-r >= 112) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x180]);
                     vpdpwssds(zmm17, zmm30, zmm5);
                     vpdpwssds(zmm16, zmm30, zmm6);
                 }
-                if (m >= 128) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x1C0]);
+                if (m-r >= 128) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x1C0]);
                     vpdpwssds(zmm15, zmm30, zmm5);
                     vpdpwssds(zmm14, zmm30, zmm6);
                 }
-                if (m >= 144) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x200]);
+                if (m-r >= 144) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x200]);
                     vpdpwssds(zmm13, zmm30, zmm5);
                     vpdpwssds(zmm12, zmm30, zmm6);
                 } 
-                if (m >= 160) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x240]);
+                if (m-r >= 160) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x240]);
                     vpdpwssds(zmm11, zmm30, zmm5);
                     vpdpwssds(zmm10, zmm30, zmm6);
                 } 
-                if (m >= 176) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x280]);
+                if (m-r >= 176) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x280]);
                     vpdpwssds(zmm9 , zmm30, zmm5);
                     vpdpwssds(zmm8 , zmm30, zmm6);
                 }
-                if (m >= 192) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x2C0]);
+                if (m-r >= 192) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x2C0]);
                     vpdpwssds(zmm7 , zmm30, zmm5);
                     vpdpwssds(zmm4 , zmm30, zmm6);
                 }
-                if (m >= 208) {
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*i)+0x300]);
+                if (m-r >= 208) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x300]);
                     vpdpwssds(zmm3 , zmm30, zmm5);
                     vpdpwssds(zmm2 , zmm30, zmm6);
                 }
             }
-        }
-        add(rsp, 0x04*k);
+            add(rsp, 0x04*k);
 
-        vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
-        // Set up writemask k1
-        mov(esi, 0xAAAAAAAA);
-        kmovd(k1, esi);
-        // Interleave real and imaginary
-        vmovdqu16(zmm29 | k1, zmm28);
-        // Write to memory
-        vmovdqa64(zword [rcx], zmm29);
-        if (m >= 32) {
-            vpslld(zmm26, zmm26, 0x10);
-            vmovdqu16(zmm27 | k1, zmm26);
-            vmovdqa64(zword [rcx+0x40], zmm27);
-        }
-        if (m >= 48) {
-            vpslld(zmm24, zmm24, 0x10);
-            vmovdqu16(zmm25 | k1, zmm24);
-            vmovdqa64(zword [rcx+0x80], zmm25);
-        }
-        if (m >= 64) {
-            vpslld(zmm22, zmm22, 0x10);
-            vmovdqu16(zmm23 | k1, zmm22);
-            vmovdqa64(zword [rcx+0xC0], zmm23);
-        }
-        if (m >= 80) {
-            vpslld(zmm20, zmm20, 0x10);
-            vmovdqu16(zmm21 | k1, zmm20);
-            vmovdqa64(zword [rcx+0x100], zmm21);
-        }
-        if (m >= 96) {
-            vpslld(zmm18, zmm18, 0x10);
-            vmovdqu16(zmm19 | k1, zmm18);
-            vmovdqa64(zword [rcx+0x140], zmm19);
-        }
-        if (m >= 112) {
-            vpslld(zmm16, zmm16, 0x10);
-            vmovdqu16(zmm17 | k1, zmm16);
-            vmovdqa64(zword [rcx+0x180], zmm17);
-        }
-        if (m >= 128) {
-            vpslld(zmm14, zmm14, 0x10);
-            vmovdqu16(zmm15 | k1, zmm14);
-            vmovdqa64(zword [rcx+0x1C0], zmm15);
-        }
-        if (m >= 144) {
-            vpslld(zmm12, zmm12, 0x10);
-            vmovdqu16(zmm13 | k1, zmm12);
-            vmovdqa64(zword [rcx+0x200], zmm13);
-        }
-        if (m >= 160) {
-            vpslld(zmm10, zmm10, 0x10);
-            vmovdqu16(zmm11 | k1, zmm10);
-            vmovdqa64(zword [rcx+0x240], zmm11);
-        }
-        if (m >= 176) {
-            vpslld(zmm8, zmm8, 0x10);
-            vmovdqu16(zmm9 | k1, zmm8);
-            vmovdqa64(zword [rcx+0x280], zmm9);
-        }
-        if (m >= 192) {
-            vpslld(zmm4, zmm4, 0x10);
-            vmovdqu16(zmm7 | k1, zmm4);
-            vmovdqa64(zword [rcx+0x2C0], zmm7);
-        }
-        if (m >= 208) {
-            vpslld(zmm2, zmm2, 0x10);
-            vmovdqu16(zmm3 | k1, zmm2);
-            vmovdqa64(zword [rcx+0x300], zmm3);
+            vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
+            // Set up writemask k1
+            mov(esi, 0xAAAAAAAA);
+            kmovd(k1, esi);
+            // Interleave real and imaginary
+            vmovdqu16(zmm29 | k1, zmm28);
+            // Write to memory
+            vmovdqa64(zword [rcx+(r*0x04)], zmm29);
+            if (m-r >= 32) {
+                vpslld(zmm26, zmm26, 0x10);
+                vmovdqu16(zmm27 | k1, zmm26);
+                vmovdqa64(zword [rcx+(r*0x04)+0x40], zmm27);
+            }
+            if (m-r >= 48) {
+                vpslld(zmm24, zmm24, 0x10);
+                vmovdqu16(zmm25 | k1, zmm24);
+                vmovdqa64(zword [rcx+(r*0x04)+0x80], zmm25);
+            }
+            if (m-r >= 64) {
+                vpslld(zmm22, zmm22, 0x10);
+                vmovdqu16(zmm23 | k1, zmm22);
+                vmovdqa64(zword [rcx+(r*0x04)+0xC0], zmm23);
+            }
+            if (m-r >= 80) {
+                vpslld(zmm20, zmm20, 0x10);
+                vmovdqu16(zmm21 | k1, zmm20);
+                vmovdqa64(zword [rcx+(r*0x04)+0x100], zmm21);
+            }
+            if (m-r >= 96) {
+                vpslld(zmm18, zmm18, 0x10);
+                vmovdqu16(zmm19 | k1, zmm18);
+                vmovdqa64(zword [rcx+(r*0x04)+0x140], zmm19);
+            }
+            if (m-r >= 112) {
+                vpslld(zmm16, zmm16, 0x10);
+                vmovdqu16(zmm17 | k1, zmm16);
+                vmovdqa64(zword [rcx+(r*0x04)+0x180], zmm17);
+            }
+            if (m-r >= 128) {
+                vpslld(zmm14, zmm14, 0x10);
+                vmovdqu16(zmm15 | k1, zmm14);
+                vmovdqa64(zword [rcx+(r*0x04)+0x1C0], zmm15);
+            }
+            if (m-r >= 144) {
+                vpslld(zmm12, zmm12, 0x10);
+                vmovdqu16(zmm13 | k1, zmm12);
+                vmovdqa64(zword [rcx+(r*0x04)+0x200], zmm13);
+            }
+            if (m-r >= 160) {
+                vpslld(zmm10, zmm10, 0x10);
+                vmovdqu16(zmm11 | k1, zmm10);
+                vmovdqa64(zword [rcx+(r*0x04)+0x240], zmm11);
+            }
+            if (m-r >= 176) {
+                vpslld(zmm8, zmm8, 0x10);
+                vmovdqu16(zmm9 | k1, zmm8);
+                vmovdqa64(zword [rcx+(r*0x04)+0x280], zmm9);
+            }
+            if (m-r >= 192) {
+                vpslld(zmm4, zmm4, 0x10);
+                vmovdqu16(zmm7 | k1, zmm4);
+                vmovdqa64(zword [rcx+(r*0x04)+0x2C0], zmm7);
+            }
+            if (m-r >= 208) {
+                vpslld(zmm2, zmm2, 0x10);
+                vmovdqu16(zmm3 | k1, zmm2);
+                vmovdqa64(zword [rcx+(r*0x04)+0x300], zmm3);
+            }
         }
         ret();
     }
@@ -435,10 +418,11 @@ void benchDimensions(long m, long k, long numIter, bool assertEqual) {
 
 int main(int argc, char** argv) {
     srand(time(0));
-    long numIter = 100000;
-    for(long m = 16; m <= 16; m+=16) {
-        for(long k = 16; k <= 1024; k += 16)
-            benchDimensions(m, k, numIter, argc==1);    
-        outputCSV(std::to_string(m));
+    long numIter = 10000;
+    for(long m = 224; m <= 256; m+=16) {
+        //for(long k = 16; k <= 1024; k += 16)
+            benchDimensions(m, m, numIter, argc==1);    
     }
+    outputCSV("squares");
+
 }
