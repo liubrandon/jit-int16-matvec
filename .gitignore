@@ -4,6 +4,7 @@ matvec
 r0*
 advisor
 e000
+*.advixeproj
 # Created by https://www.toptal.com/developers/gitignore/api/linux,c++,assembler
 # Edit at https://www.toptal.com/developers/gitignore?templates=linux,c++,assembler
 
