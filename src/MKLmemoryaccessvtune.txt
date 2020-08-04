@@ -1,0 +1,67 @@
+brandon@ecl-mem-01:~/jit-int16-matvec$ vtune --collect memory-access ./matvec 1
+vtune: Peak bandwidth measurement started.
+vtune: Peak bandwidth measurement finished.
+vtune: Warning: To enable hardware event-based sampling, VTune Profiler has disabled the NMI watchdog timer. The watchdog timer will be re-enabled after collection completes.
+vtune: Collection started. To stop the collection, either press CTRL-C or enter from another console window: vtune -r /home/brandon/jit-int16-matvec/r038macc -command stop.
+
+        ---------- 
+
+     100000000 iterations, (16x64) * (64x1)
+MKL JIT cgemm: 0.0599037714 µs per iteration
+ my JIT int16: 0.0000000010 µs per iteration
+  57622561.95x MKL JIT cgemm
+---------------------------------
+
+vtune: Collection stopped.
+vtune: Using result path `/home/brandon/jit-int16-matvec/r038macc'
+vtune: Executing actions 20 % Resolving information for `matvec'               
+vtune: Warning: Cannot locate file `vmlinux'.
+vtune: Executing actions 21 % Resolving information for `vmlinux'              
+vtune: Warning: Function and source-level analysis for the Linux kernel will not be possible since neither debug version of the kernel nor kernel symbol tables are found. See the Enabling Linux Kernel Analysis topic in the product online help for instructions.
+vtune: Executing actions 75 % Generating a report                              Elapsed Time: 5.996s
+    CPU Time: 5.939s
+    Memory Bound: 0.1% of Pipeline Slots
+        L1 Bound: 3.5% of Clockticks
+        L2 Bound: 0.0% of Clockticks
+        L3 Bound: 0.0% of Clockticks
+        DRAM Bound: 0.0% of Clockticks
+            DRAM Bandwidth Bound: 0.0% of Elapsed Time
+        Store Bound: 0.0% of Clockticks
+        NUMA: % of Remote Accesses: 0.0%
+        UPI Utilization Bound: 0.0% of Elapsed Time
+    Loads: 26,992,809,760
+    Stores: 408,012,240
+    LLC Miss Count: 0
+        Local DRAM Access Count: 0
+        Remote DRAM Access Count: 0
+        Remote Cache Access Count: 0
+    Average Latency (cycles): 7
+    Total Thread Count: 1
+    Paused Time: 0s
+
+Bandwidth Utilization
+Bandwidth Domain                  Platform Maximum  Observed Maximum  Average  % of Elapsed Time with High BW Utilization(%)
+--------------------------------  ----------------  ----------------  -------  ---------------------------------------------
+DRAM, GB/sec                      210                          3.400    0.033                                           0.0%
+DRAM Single-Package, GB/sec       105                          3.000    0.055                                           0.0%
+UPI Utilization Single-link, (%)  100                          3.900    0.217                                           0.0%
+Collection and Platform Info
+    Application Command Line: ./matvec "1" 
+    User Name: brandon
+    Operating System: 4.15.0-112-generic NAME="Ubuntu" VERSION="18.04.4 LTS (Bionic Beaver)" ID=ubuntu ID_LIKE=debian PRETTY_NAME="Ubuntu 18.04.4 LTS" VERSION_ID="18.04" HOME_URL="https://www.ubuntu.com/" SUPPORT_URL="https://help.ubuntu.com/" BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/" PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy" VERSION_CODENAME=bionic UBUNTU_CODENAME=bionic
+    Computer Name: ecl-mem-01
+    Result Size: 27 MB 
+    Collection start time: 19:00:33 03/08/2020 UTC
+    Collection stop time: 19:00:39 03/08/2020 UTC
+    Collector Type: Event-based sampling driver
+    CPU
+        Name: Intel(R) Xeon(R) Processor code named Cascadelake
+        Frequency: 2.594 GHz 
+        Logical CPU Count: 72
+        Max DRAM Single-Package Bandwidth: 105.000 GB/s
+
+If you want to skip descriptions of detected performance issues in the report,
+enter: vtune -report summary -report-knob show-issues=false -r <my_result_dir>.
+Alternatively, you may view the report in the csv format: vtune -report
+<report_name> -format=csv.
+vtune: Executing actions 100 % done                                            
