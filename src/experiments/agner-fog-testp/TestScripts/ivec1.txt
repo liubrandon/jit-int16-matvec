@@ -1,0 +1,187 @@
+2020-08-05:18:46:30
+
+integer vector move instructions. etc
+
+Round trip latency test
+# Instruction | num. op. | dest. operand  | source operand | immediate operand
+1:       movd |        2 |            r32 |          mmx64 | 
+2:       movd |        2 |          mmx64 |            r32 | 
+
+     Clock   Core cyc   Instruct   uops RAT       Uops     uop p0   Mov elim 
+     28968      40202      20210      20117      20114      10002          0 
+     28878      39992      20210      20138      20110      10000          0 
+     28878      39992      20210      20123      20110      10000          0 
+     28880      39988      20210      20137      20114      10002          0 
+     28880      39992      20210      20122      20110      10000          0 
+
+Round trip latency test
+# Instruction | num. op. | dest. operand  | source operand | immediate operand
+1:       movd |        2 |            r32 |           v128 | 
+2:       movd |        2 |           v128 |            r32 | 
+
+     Clock   Core cyc   Instruct   uops RAT       Uops     uop p0   Mov elim 
+     29452      40780      20210      20109      20114      10002          0 
+     28880      39989      20210      20116      20114      10001          0 
+     28882      39990      20210      20102      20114      10001          0 
+     28880      39992      20210      20090      20110       9999          0 
+     28880      39989      20210      20101      20114      10001          0 
+
+Round trip latency test
+# Instruction | num. op. | dest. operand  | source operand | immediate operand
+1:       movd |        2 |           v128 |            r32 | 
+2:       movd |        2 |            r32 |           v128 | 
+
+     Clock   Core cyc   Instruct   uops RAT       Uops     uop p0   Mov elim 
+     29194      40422      20210      20136      20114      10003          0 
+     28878      39988      20210      20133      20110      10000          0 
+     28880      39990      20210      20128      20110      10000          0 
+     28880      39988      20210      20132      20114      10002          0 
+     28880      39987      20210      20132      20114      10002          0 
+
+Throughput for movd v128, r32
+
+     Clock   Core cyc   Instruct       Uops     uop p0     uop p1     uop p2 
+      7624      10557      10210      10120          4         -2          1 
+      7214       9988      10210      10120          4         -2          0 
+      7214       9989      10210      10120          4         -1          1 
+      7212       9988      10210      10120          4         -1          0 
+      7214       9989      10210      10116          5          2          1 
+
+     Clock   Core cyc   Instruct       Uops     uop p3     uop p4     uop p5 
+      7266      10064      10210      10116          0          0      10000 
+      7216       9992      10210      10116          1          0      10000 
+      7214       9989      10210      10119          0          0      10001 
+      7214       9990      10210      10120          1          0      10003 
+      7214       9987      10210      10123          0          0      10004 
+
+     Clock   Core cyc   Instruct       Uops     uop p6     uop p7   uops RAT 
+      7582      10497      10210      10119        105          0      10143 
+      7214       9990      10210      10116        109          0      10141 
+      7214       9989      10210      10119        105          0      10141 
+      7214       9988      10210      10120        110          0      10141 
+      7212       9988      10210      10119         95          0      10116 
+
+Throughput for movd r32, v128
+
+     Clock   Core cyc   Instruct       Uops     uop p0     uop p1     uop p2 
+      7584      10499      10210      10105      10003         -2          1 
+      7218       9992      10210      10101      10003          2          0 
+      7216       9990      10210      10105      10002         -1          1 
+      7216       9991      10210      10105      10002         -1          0 
+      7216       9992      10210      10101      10003          2          1 
+
+     Clock   Core cyc   Instruct       Uops     uop p3     uop p4     uop p5 
+      7324      10145      10210      10120          1          0          3 
+      7214       9992      10210      10120          0          0          3 
+      7214       9991      10210      10120          1          0          3 
+      7214       9993      10210      10116          0          0          0 
+      7212       9993      10210      10116          1          0          0 
+
+     Clock   Core cyc   Instruct       Uops     uop p6     uop p7   uops RAT 
+      7240      10026      10210      10116        112          0      10143 
+      7216       9991      10210      10119        108          0      10137 
+      7216       9990      10210      10119        109          0      10143 
+      7216       9994      10210      10116        101          0      10122 
+      7216       9994      10210      10116        102          0      10122 
+
+Round trip latency test
+# Instruction | num. op. | dest. operand  | source operand | immediate operand
+1:       movq |        2 |           v128 |            r64 | 
+2:       movq |        2 |            r64 |           v128 | 
+
+     Clock   Core cyc   Instruct   uops RAT       Uops     uop p0   Mov elim 
+     29218      40458      20210      20124      20110      10001          0 
+     28880      39990      20210      20114      20114      10001          0 
+     28880      39992      20210      20111      20106       9998          0 
+     28878      39991      20210      20111      20106       9998          0 
+     28880      39990      20210      20114      20114      10001          0 
+
+movq: Latency, 2 register operands, type mmx, size 64  
+
+     Clock   Core cyc   Instruct   uops RAT       Uops     uop p0   Mov elim 
+      7216       9994      10222      10152      10122       4998          0 
+      7214       9992      10222      10164      10122       4996          0 
+      7218       9996      10222      10145      10126       4996          0 
+      7216       9994      10222      10141      10122       4995          0 
+      7216       9996      10222      10129      10126       4996          0 
+
+movq: Throughput, 2 register operands, type mmx, size 64  
+
+     Clock   Core cyc   Instruct       Uops     uop p0     uop p1     uop p2 
+      3742       5189      10222      10122       5000          2          0 
+      3616       5013      10222      10122       5000          2          1 
+      3612       5008      10222      10122       5000          2          0 
+      3616       5005      10222      10143       5004          0          1 
+      3616       5008      10222      10143       5004          0          0 
+
+     Clock   Core cyc   Instruct       Uops     uop p3     uop p4     uop p5 
+      3966       5492      10222      10137          1          0       5000 
+      3616       5010      10222      10119          0          0       4999 
+      3616       5009      10222      10137          1          0       5000 
+      3616       5009      10222      10119          0          0       4999 
+      3616       5010      10222      10119          1          0       4999 
+
+     Clock   Core cyc   Instruct       Uops     uop p6     uop p7   uops RAT 
+      3724       5150      10222      10143         99          0      10137 
+      3616       5003      10222      10140        111          0      10168 
+      3616       5003      10222      10143        108          0      10165 
+      3616       5002      10222      10143        108          0      10164 
+      3616       5001      10222      10143         98          0      10138 
+
+movq: Latency, 2 register operands, type v, size 128  
+
+     Clock   Core cyc   Instruct   uops RAT       Uops     uop p0   Mov elim 
+      7220       9995      10227      10147      10135       3299          0 
+      7218       9991      10227      10175      10131       3297          0 
+      7218       9995      10227      10115      10131       3298          0 
+      7220       9995      10227      10134      10135       3298          0 
+      7218       9995      10227      10134      10135       3298          0 
+
+movq: Throughput, 2 register operands, type v, size 128  
+
+     Clock   Core cyc   Instruct       Uops     uop p0     uop p1     uop p2 
+      2460       3406      10227      10130       3331       3336          0 
+      2428       3362      10227      10145       3333       3333          1 
+      2430       3363      10227      10148       3333       3335          0 
+      2420       3353      10227      10130       3332       3337          1 
+      2420       3355      10227      10127       3330       3337          0 
+
+     Clock   Core cyc   Instruct       Uops     uop p3     uop p4     uop p5 
+      2838       3927      10227      10142          0          0       3337 
+      2430       3359      10227      10145          1          0       3338 
+      2420       3355      10227      10124          0          0       3334 
+      2420       3349      10227      10145          1          0       3336 
+      2420       3354      10227      10124          0          0       3334 
+
+     Clock   Core cyc   Instruct       Uops     uop p6     uop p7   uops RAT 
+      2528       3501      10227      10127        104          0      10146 
+      2432       3364      10227      10148        108          0      10159 
+      2432       3363      10227      10130        108          0      10162 
+      2424       3352      10227      10145        103          0      10149 
+      2422       3352      10227      10130        100          0      10146 
+
+Round trip latency test
+# Instruction | num. op. | dest. operand  | source operand | immediate operand
+1:       movd |        2 |            m32 |           v128 | 
+2:       movd |        2 |           v128 |            m32 | 
+
+     Clock   Core cyc   Instruct   uops RAT       Uops     uop p0   Mov elim 
+     36896      51089      20210      20125      30110          1          0 
+     36120      50012      20210      20146      30118          3          0 
+     36122      50015      20210      20139      30110          0          0 
+     36120      50009      20210      20155      30114          2          0 
+     36118      50009      20210      20155      30114          2          0 
+
+Round trip latency test
+# Instruction | num. op. | dest. operand  | source operand | immediate operand
+1:       movq |        2 |            m64 |           v128 | 
+2:       movq |        2 |           v128 |            m64 | 
+
+     Clock   Core cyc   Instruct   uops RAT       Uops     uop p0   Mov elim 
+     36460      50488      20210      20122      30106         -1          0 
+     36120      50016      20210      20148      30106         -2          0 
+     36120      50017      20210      20140      30114          1          0 
+     36142      50050      20210      20102      30110         -1          0 
+     36112      50008      20210      20098      30110         -1          0 
+
+Throughput for movq m64, v128

@@ -11,6 +11,7 @@
 #include <vector>
 #include <assert.h>
 #include <numeric>
+#include <math.h>
 #define DIE(...) fprintf(stderr, __VA_ARGS__); exit(1);
 struct Complex_float {
     float real;
@@ -90,40 +91,24 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
         : Xbyak::CodeGenerator(200*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
     {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs
         int rowsize = m*4;
-        int r = 0;
         sub(rsp, 0x04*k); // allocate 256 bytes to the stack (size of 64 Complex_int16)
-        vmovdqu16(zmm0, zword [r8]);      // zmm0 = swapPairs
         vpbroadcastd(zmm31, dword [rdi]); //  rdi = {1, -1, ...}
-
-        vmovdqu16(zmm27, zword [rsi+(r*0x04)]); // load first column (a_b)
-        vmovdqu16(zmm1, zword [rdx+(0*0x40)]);
-        vmovdqu16(zmm2, zword [rdx+(1*0x40)]);
-        vpshufb(zmm1, zmm1, zmm0); 
-        vpshufb(zmm2, zmm2, zmm0); 
-        vmovdqu16(zword [rsp+(0*0x40)], zmm1); 
-        vmovdqu16(zword [rsp+(1*0x40)], zmm2); 
-        vmovdqu16(zmm3, zword [rdx+(2*0x40)]);
-        vmovdqu16(zmm4, zword [rdx+(3*0x40)]);
-        vpshufb(zmm3, zmm3, zmm0); 
-        vpshufb(zmm4, zmm4, zmm0); 
-        vmovdqu16(zword [rsp+(2*0x40)], zmm3); 
-        vmovdqu16(zword [rsp+(3*0x40)], zmm4);
-        vmovdqu16(zmm30, zword [rsi+rowsize]); // Second column
+        vmovdqu16(zmm0, zword [r8]);      // zmm0 = swapPairs
         for(int i = 0; i < k/16; i++) {
             // load vec into registers, swap pairs of vec, store swapped vector on the the stack
             vmovdqu16(zmm1, zword [rdx+(i*0x40)]);
             vpshufb(zmm1, zmm1, zmm0); 
-            vmovdqu16(zword [rsp+(i*0x40)], zmm1); 
+            vmovdqu16(zword [rsp+(i*0x40)], zmm1);
         }
         int inc = 0; // overwritten in the loop
-        for(; r < m; r += inc) {
+        for(int r = 0; r < m; r += inc) { // TODO: Fix this loop
             // first 16 elements of column 1
+            vmovdqu16(zmm30, zword [rsi+(r*0x04)]); // load first column (a_b)
             vpbroadcastd(zmm5, dword [rdx]); // zmm5 = c_d (broadcast first two values from vec to all locations)
-            vpbroadcastd(zmm6, dword [rsp]); /// zmm6 = d_c
             vpmullw(zmm5, zmm5, zmm31); // zmm5 = c_minus_d (negate every other value in zmm5)
-            vpmaddwd(zmm29, zmm27, zmm5); // zmm29 = real_res accumulator
-            vpmaddwd(zmm28, zmm27, zmm6); // zmm28 = imag_res accumulator
-            vmovdqu16(zmm26, zword [rsi+rowsize*2]); // Third column
+            vpbroadcastd(zmm6, dword [rsp]); // zmm6 = d_c
+            vpmaddwd(zmm28, zmm30, zmm6); // zmm28 = imag_res accumulator
+            vpmaddwd(zmm29, zmm30, zmm5); // zmm29 = real_res accumulator
             inc = 16;
             if (m-r >= 32) {
                 vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x40]);
@@ -184,97 +169,73 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
                 vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x300]);
                 vpmaddwd(zmm3 , zmm30, zmm5);
                 vpmaddwd(zmm2 , zmm30, zmm6); inc = 208;
-            }
-            if (m == 16) {
-                for(int i = 1; i < k; i += 3) {
-                    vmovdqu16(zmm27, zword [rsi+(rowsize*(i+2))]);
-                    vpbroadcastd(zmm5, dword [rdx+(0x04*i)]);
-                    vpbroadcastd(zmm6, dword [rsp+(0x04*i)]); 
-                    vpmullw(zmm5, zmm5, zmm31);
-                    vpdpwssds(zmm29, zmm30, zmm5);
-                    vpdpwssds(zmm28, zmm30, zmm6);
-                    vmovdqu16(zmm30, zword [rsi+(rowsize*(i+3))]);
-                    vpbroadcastd(zmm5, dword [rdx+(0x04*(i+1))]);
-                    vpbroadcastd(zmm6, dword [rsp+(0x04*(i+1))]); 
-                    vpmullw(zmm5, zmm5, zmm31);
-                    vpdpwssds(zmm29, zmm26, zmm5);
-                    vpdpwssds(zmm28, zmm26, zmm6);
-                    if(i <= 13)
-                        vmovdqu16(zmm26, zword [rsi+(rowsize*(i+4))]);
-                    vpbroadcastd(zmm5, dword [rdx+(0x04*(i+2))]);
-                    vpbroadcastd(zmm6, dword [rsp+(0x04*(i+2))]); 
-                    vpmullw(zmm5, zmm5, zmm31);
-                    vpdpwssds(zmm29, zmm27, zmm5);
-                    vpdpwssds(zmm28, zmm27, zmm6);
+            } 
+            for(int i = 1; i < k; i++) {
+                vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)]);
+                vpbroadcastd(zmm5, dword [rdx+(0x04*i)]);
+                vpmullw(zmm5, zmm5, zmm31);
+                vpbroadcastd(zmm6, dword [rsp+(0x04*i)]); 
+                vpdpwssds(zmm29, zmm30, zmm5);
+                vpdpwssds(zmm28, zmm30, zmm6);
+                if (m-r >= 32) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x40]);
+                    vpdpwssds(zmm27, zmm30, zmm5);
+                    vpdpwssds(zmm26, zmm30, zmm6);
+                } 
+                if (m-r >= 48) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x80]);
+                    vpdpwssds(zmm25, zmm30, zmm5);
+                    vpdpwssds(zmm24, zmm30, zmm6);
+                } 
+                if (m-r >= 64) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0xC0]);
+                    vpdpwssds(zmm23, zmm30, zmm5);
+                    vpdpwssds(zmm22, zmm30, zmm6);
                 }
-            } else {
-                for(int i = 1; i < k; i++) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)]);
-                    vpbroadcastd(zmm5, dword [rdx+(0x04*i)]);
-                    vpbroadcastd(zmm6, dword [rsp+(0x04*i)]); 
-                    vpmullw(zmm5, zmm5, zmm31);
-                    vpdpwssds(zmm29, zmm30, zmm5);
-                    vpdpwssds(zmm28, zmm30, zmm6);
-                    if (m-r >= 32) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x40]);
-                        vpdpwssds(zmm27, zmm30, zmm5);
-                        vpdpwssds(zmm26, zmm30, zmm6);
-                    } 
-                    if (m-r >= 48) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x80]);
-                        vpdpwssds(zmm25, zmm30, zmm5);
-                        vpdpwssds(zmm24, zmm30, zmm6);
-                    } 
-                    if (m-r >= 64) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0xC0]);
-                        vpdpwssds(zmm23, zmm30, zmm5);
-                        vpdpwssds(zmm22, zmm30, zmm6);
-                    }
-                    if (m-r >= 80) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x100]);
-                        vpdpwssds(zmm21, zmm30, zmm5);
-                        vpdpwssds(zmm20, zmm30, zmm6);
-                    } 
-                    if (m-r >= 96) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x140]);
-                        vpdpwssds(zmm19, zmm30, zmm5);
-                        vpdpwssds(zmm18, zmm30, zmm6);
-                    } 
-                    if (m-r >= 112) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x180]);
-                        vpdpwssds(zmm17, zmm30, zmm5);
-                        vpdpwssds(zmm16, zmm30, zmm6);
-                    }
-                    if (m-r >= 128) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x1C0]);
-                        vpdpwssds(zmm15, zmm30, zmm5);
-                        vpdpwssds(zmm14, zmm30, zmm6);
-                    }
-                    if (m-r >= 144) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x200]);
-                        vpdpwssds(zmm13, zmm30, zmm5);
-                        vpdpwssds(zmm12, zmm30, zmm6);
-                    } 
-                    if (m-r >= 160) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x240]);
-                        vpdpwssds(zmm11, zmm30, zmm5);
-                        vpdpwssds(zmm10, zmm30, zmm6);
-                    } 
-                    if (m-r >= 176) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x280]);
-                        vpdpwssds(zmm9 , zmm30, zmm5);
-                        vpdpwssds(zmm8 , zmm30, zmm6);
-                    }
-                    if (m-r >= 192) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x2C0]);
-                        vpdpwssds(zmm7 , zmm30, zmm5);
-                        vpdpwssds(zmm4 , zmm30, zmm6);
-                    }
-                    if (m-r >= 208) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x300]);
-                        vpdpwssds(zmm3 , zmm30, zmm5);
-                        vpdpwssds(zmm2 , zmm30, zmm6);
-                    }
+                if (m-r >= 80) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x100]);
+                    vpdpwssds(zmm21, zmm30, zmm5);
+                    vpdpwssds(zmm20, zmm30, zmm6);
+                } 
+                if (m-r >= 96) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x140]);
+                    vpdpwssds(zmm19, zmm30, zmm5);
+                    vpdpwssds(zmm18, zmm30, zmm6);
+                } 
+                if (m-r >= 112) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x180]);
+                    vpdpwssds(zmm17, zmm30, zmm5);
+                    vpdpwssds(zmm16, zmm30, zmm6);
+                }
+                if (m-r >= 128) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x1C0]);
+                    vpdpwssds(zmm15, zmm30, zmm5);
+                    vpdpwssds(zmm14, zmm30, zmm6);
+                }
+                if (m-r >= 144) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x200]);
+                    vpdpwssds(zmm13, zmm30, zmm5);
+                    vpdpwssds(zmm12, zmm30, zmm6);
+                } 
+                if (m-r >= 160) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x240]);
+                    vpdpwssds(zmm11, zmm30, zmm5);
+                    vpdpwssds(zmm10, zmm30, zmm6);
+                } 
+                if (m-r >= 176) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x280]);
+                    vpdpwssds(zmm9 , zmm30, zmm5);
+                    vpdpwssds(zmm8 , zmm30, zmm6);
+                }
+                if (m-r >= 192) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x2C0]);
+                    vpdpwssds(zmm7 , zmm30, zmm5);
+                    vpdpwssds(zmm4 , zmm30, zmm6);
+                }
+                if (m-r >= 208) {
+                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x300]);
+                    vpdpwssds(zmm3 , zmm30, zmm5);
+                    vpdpwssds(zmm2 , zmm30, zmm6);
                 }
             }
             add(rsp, 0x04*k);
@@ -347,7 +308,6 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
                 vmovdqa64(zword [rcx+(r*0x04)+0x300], zmm3);
             }
         }
-        
         ret();
     }
 };
@@ -470,15 +430,22 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode) {
 
 int main(int argc, char** argv) {
     srand(time(0));
-    long numIter = 100000000;
+    // char* nPtr = NULL;
+    // long m = strtoul(argv[1], &nPtr, 0);
+    // long n = strtoul(nPtr, &nPtr, 0);
     PROGRAM_MODE mode;
-    if     (strcmp("mkl", argv[1]) == 0)  mode = MKL;
-    else if(strcmp("mine", argv[1]) == 0) mode = MINE;
-    else if(strcmp("both", argv[1]) == 0) mode = BOTH;
+    if     (strcmp("mkl", argv[2]) == 0)  mode = MKL;
+    else if(strcmp("mine", argv[2]) == 0) mode = MINE;
+    else if(strcmp("both", argv[2]) == 0) mode = BOTH;
+    double exp = 6.0;
+    if(argc >= 4) {
+        exp = strtod(argv[3], NULL);
+    }
+    long numIter = static_cast<long>(pow(10.0,exp));
     //for(long m = 224; m <= 256; m+=16) {
         //for(long k = 16; k <= 1024; k += 16)
-            benchDimensions(64, 16, numIter, mode);    
+            benchDimensions(16, 64, numIter, mode);    
     //}
-    outputCSV("squares");
+    //outputCSV("squares");
     return 0;
 }

@@ -1,0 +1,37 @@
+#instruction,registertype,num operands,imm op,test mode,instr set,options,
+,,,,,,
+$text=MKL instructions,,,,,,
+$file=mklresults.txt,,,,,,
+vpmaddwd,512,3,,lt,avx512,3op
+vpdpwssds,512,3,,lt,avx512,3op
+vshufps,512,3,3,ltm,avx512,
+vshufpd,512,3,3,lt,avx512,
+,,,,,,
+vpermilps,512,3,,lt,avx512,
+vpermilps,512,2,3,lt,avx512,
+vpermilpd,512,3,,lt,avx512,
+vpermilpd,512,2,3,lt,avx512,
+,,,,,,
+vmovups,512,2,0x5AF0,macros=miscellaneous.inc,avx512,modelins=vmovdqu8 tmode=TR elementsize=32
+vmovups,512,2,0x5AF0,macros=miscellaneous.inc,avx512,modelins=vmovdqu8 tmode=TR elementsize=32 usezero=1
+vmovups,512,2,0x5AF0,macros=miscellaneous.inc,avx512,modelins=vmovdqu8 tmode=LR elementsize=32
+vmovups,512,2,0x5AF0,macros=miscellaneous.inc,avx512,modelins=vmovdqu8 tmode=LR elementsize=32 usezero=1
+vmovups,512,2,0x5AF0,macros=miscellaneous.inc,avx512,modelins=vmovdqu8 tmode=TW elementsize=32
+$text=\nNote: {z} on memory destination operand not allowed,,,,,,
+#vmovups,512,2,0x5AF0,macros=miscellaneous.inc,avx512,modelins=vmovdqu8 tmode=TW elementsize=32 usezero=1
+vmovups,512,2,0x5AF0,macros=miscellaneous.inc,avx512,modelins=vmovdqu8 tmode=LW elementsize=32
+#vmovups,512,2,0x5AF0,macros=miscellaneous.inc,avx512,modelins=vmovdqu8 tmode=LW elementsize=32 usezero=1
+,,,,,,
+vaddps,512,3,,lt,avx512,
+,,,,,,
+vmulps,512,3,,lt,avx512,
+,,,,,,
+vfmadd231ps,512,3,,ltm,avx512,3op
+vfmsub231ps,512,3,,lt,avx512,3op
+vfmadd231pd,512,3,,lt,avx512,3op
+,,,,,,
+vzeroupper,256,0,,t,avx,
+vzeroupper,256,0,,t,avx,use32
+vzeroall,256,0,,t,avx,
+vzeroall,256,0,,t,avx,use32
+,,,,,,
