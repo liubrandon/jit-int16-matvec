@@ -86,6 +86,99 @@ int8_t temp[64] = {2,3,0,1,6,7,4,5,10,11,8,9,14,15,12,13,18,19,16,17,22,23,20,21
 int16_t temp1[32] = {-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1};
 __m512i swapPairs = _mm512_loadu_si512((const void*)temp);
 __m512i subAdd = _mm512_loadu_si512((const void*)temp1);
+struct test16 : Xbyak::CodeGenerator {
+    test16(int m, int k)
+        : Xbyak::CodeGenerator(4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
+    {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs
+        int rowsize = m*4;
+        sub(rsp, 0x04*k); // allocate 256 bytes to the stack (size of 64 Complex_int16)
+        vpbroadcastd(zmm31, dword [rdi]); //  rdi = {1, -1, ...}
+        vmovdqu16(zmm0, zword [r8]);      // zmm0 = swapPairs
+        for(int i = 0; i < k/16; i++) {
+            vmovdqu16(zmm1, zword [rdx+(i*0x40)]);
+            vpshufb(zmm1, zmm1, zmm0); 
+            vmovdqu16(zword [rsp+(i*0x40)], zmm1);
+        }
+        // vmovdqu16(zmm30, zword [rsi]); // load first column (a_b)
+        // vpbroadcastd(zmm5, dword [rdx]); // zmm5 = c_d (broadcast first two values from vec to all locations)
+        // vpmullw(zmm5, zmm5, zmm31); // zmm5 = c_minus_d (negate every other value in zmm5)
+        // vpbroadcastd(zmm6, dword [rsp]); // zmm6 = d_c
+        // vpmaddwd(zmm28, zmm30, zmm6); // zmm28 = imag_res accumulator
+        // vpmaddwd(zmm29, zmm30, zmm5); // zmm29 = real_res accumulator
+        vxorps(zmm29,zmm29,zmm29);
+        vxorps(zmm28,zmm28,zmm28);
+        vxorps(zmm1,zmm1,zmm1);
+        vxorps(zmm2,zmm2,zmm2);
+        vxorps(zmm3,zmm3,zmm3);
+        vxorps(zmm4,zmm4,zmm4);
+        for(int i = 0; i < k; i+=8) {
+            vmovdqu16(zmm30, zword [rsi+(rowsize*i)]);
+            vmovdqu16(zmm27, zword [rsi+(rowsize*(i+1))]);
+            vmovdqu16(zmm26, zword [rsi+(rowsize*(i+2))]);
+            vmovdqu16(zmm25, zword [rsi+(rowsize*(i+3))]);
+            vmovdqu16(zmm24, zword [rsi+(rowsize*(i+4))]);
+            vmovdqu16(zmm23, zword [rsi+(rowsize*(i+5))]);
+            vmovdqu16(zmm22, zword [rsi+(rowsize*(i+6))]);
+            vmovdqu16(zmm21, zword [rsi+(rowsize*(i+7))]);
+            
+            vpbroadcastd( zmm5, dword [rdx+(0x04*i)]);
+            vpmullw(zmm5 , zmm5 , zmm31);
+            vpdpwssds(zmm29, zmm30, zmm5);
+            vpbroadcastd( zmm6, dword [rsp+(0x04*i)]);
+            vpdpwssds(zmm28, zmm30, zmm6);
+            vpbroadcastd( zmm7, dword [rdx+(0x04*(i+1))]);
+            vpmullw(zmm7 , zmm7 , zmm31);
+            vpdpwssds(zmm1, zmm27, zmm7);
+            vpbroadcastd( zmm8, dword [rsp+(0x04*(i+1))]);
+            vpdpwssds(zmm2, zmm27, zmm8);
+            vpbroadcastd( zmm9, dword [rdx+(0x04*(i+2))]);
+            vpmullw(zmm9 , zmm9 , zmm31);
+            vpdpwssds(zmm3, zmm26, zmm9);
+            vpbroadcastd(zmm10, dword [rsp+(0x04*(i+2))]); 
+            vpdpwssds(zmm4, zmm26, zmm10);
+            vpbroadcastd(zmm11, dword [rdx+(0x04*(i+3))]);
+            vpmullw(zmm11, zmm11, zmm31);
+            vpdpwssds(zmm29, zmm25, zmm11);
+            vpbroadcastd(zmm12, dword [rsp+(0x04*(i+3))]); 
+            vpdpwssds(zmm28, zmm25, zmm12);
+            vpbroadcastd(zmm13, dword [rdx+(0x04*(i+4))]);
+            vpmullw(zmm13, zmm13, zmm31);
+            vpdpwssds(zmm1, zmm24, zmm13);
+            vpbroadcastd(zmm14, dword [rsp+(0x04*(i+4))]); 
+            vpdpwssds(zmm2, zmm24, zmm14);
+            vpbroadcastd(zmm15, dword [rdx+(0x04*(i+5))]);
+            vpmullw(zmm15, zmm15, zmm31);
+            vpdpwssds(zmm3, zmm23, zmm15);
+            vpbroadcastd(zmm16, dword [rsp+(0x04*(i+5))]); 
+            vpdpwssds(zmm4, zmm23, zmm16);
+            vpbroadcastd(zmm17, dword [rdx+(0x04*(i+6))]);
+            vpmullw(zmm17, zmm17, zmm31);
+            vpdpwssds(zmm29, zmm22, zmm17);
+            vpbroadcastd(zmm18, dword [rsp+(0x04*(i+6))]); 
+            vpdpwssds(zmm28, zmm22, zmm18);
+            vpbroadcastd(zmm19, dword [rdx+(0x04*(i+7))]);
+            vpmullw(zmm19, zmm19, zmm31);
+            vpdpwssds(zmm1, zmm21, zmm19);
+            vpbroadcastd(zmm20, dword [rsp+(0x04*(i+7))]); 
+            vpdpwssds(zmm2, zmm21, zmm20);
+        }
+        vpaddd(zmm28,zmm28,zmm2);
+        vpaddd(zmm28,zmm28,zmm4);
+        add(rsp, 0x04*k);
+        vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
+        // Set up writemask k1
+        mov(esi, 0xAAAAAAAA);
+        kmovd(k1, esi);
+        // Interleave real and imaginary
+        vmovdqu16(zmm29 | k1, zmm28);
+        // Write to memory
+        vpaddd(zmm29,zmm29,zmm1);
+        vpaddd(zmm29,zmm29,zmm3);
+        vmovdqa64(zword [rcx], zmm29);
+        ret();
+    }
+};
+
 struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)
         : Xbyak::CodeGenerator(200*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
@@ -308,6 +401,7 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
                 vmovdqa64(zword [rcx+(r*0x04)+0x300], zmm3);
             }
         }
+        vzeroupper();
         ret();
     }
 };
@@ -371,9 +465,9 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode) {
     vec = (MKL_Complex8*)mkl_calloc(k, sizeof(MKL_Complex8), 64);
     res = (MKL_Complex8*)mkl_calloc(m, sizeof(MKL_Complex8), 64);
     // Int16 version
-    mat16 = (Complex_int16*)aligned_alloc(64, m*k*sizeof(Complex_int16));
-    vec16 = (Complex_int16*)aligned_alloc(64, k*sizeof(Complex_int16));
-    res16 = (Complex_int16*)aligned_alloc(64, m*sizeof(Complex_int16));
+    mat16 = (Complex_int16*)aligned_alloc(128, m*k*sizeof(Complex_int16));
+    vec16 = (Complex_int16*)aligned_alloc(128, k*sizeof(Complex_int16));
+    res16 = (Complex_int16*)aligned_alloc(128, m*sizeof(Complex_int16));
     memset(res16, 0, m*sizeof(Complex_int16));
     // Randomly generate matrix/vector with values from -range to range
     int mod = 10; //rand()%mod-range
@@ -387,15 +481,15 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode) {
         vec[i] = {(float)vec16[i].real, (float)vec16[i].imag};
     }
     double mklTime = 0.0;
-    void* matvec16;
     double start = getTime();
     // Uncomment below for int16
     if(mode == MINE || mode == BOTH) {
-        JitInt16MatVec jit16(m, k);
+        test16 jit16(m, k);
         jit16.setProtectModeRE(); // Use Read/Exec mode for security
         void (*matvec16)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs) = jit16.getCode<void (*)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs)>();
         for(int i = 0; i < numIter; i++)
             matvec16((void*)&broad16, mat16, vec16, res16, (void*)&swapPairs);
+        //outputASM((void*)matvec16, m, k, std::string("./asm/") + std::to_string(m) + std::string("xK/"), "_myint16");
     }
     double myTime = timeSince(start);
 
@@ -404,7 +498,6 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode) {
         mklTime = runJITCGEMM(mat, vec, res, m, k, numIter);
     }
     // Save .asm of my function (MKL .asm is saved in runJITCGEMM)
-    outputASM(matvec16, m, k, std::string("./asm/") + std::to_string(m) + std::string("xK/"), "_myint16");
     // Output result
     for(int i = 0; i < m; i++) std::cout << "(" << res[i].real << "," << res[i].imag << ")";
     std::cout << std::endl;
@@ -432,7 +525,7 @@ int main(int argc, char** argv) {
     srand(time(0));
     // char* nPtr = NULL;
     // long m = strtoul(argv[1], &nPtr, 0);
-    // long n = strtoul(nPtr, &nPtr, 0);
+    // long k = strtoul(nPtr+1, &nPtr, 0);
     PROGRAM_MODE mode;
     if     (strcmp("mkl", argv[2]) == 0)  mode = MKL;
     else if(strcmp("mine", argv[2]) == 0) mode = MINE;

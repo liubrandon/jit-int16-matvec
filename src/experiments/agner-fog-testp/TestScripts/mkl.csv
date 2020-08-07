@@ -1,7 +1,9 @@
-#instruction,registertype,num operands,imm op,test mode,instr set,options,
+instruction,registertype,num operands,imm op,test mode,instr set,options,
 ,,,,,,
-$text=MKL instructions,,,,,,
+$text=int16 instructions,,,,,,
 $file=mklresults.txt,,,,,,
+vpbroadcastd,512,2,"",ltm,avx512,""
+vmovdqu16,512,"","","","",""
 vpmaddwd,512,3,,lt,avx512,3op
 vpdpwssds,512,3,,lt,avx512,3op
 vshufps,512,3,3,ltm,avx512,
