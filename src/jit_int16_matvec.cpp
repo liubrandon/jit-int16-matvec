@@ -113,82 +113,73 @@ struct test16 : Xbyak::CodeGenerator {
         vxorps(zmm4,zmm4,zmm4);
         vxorps(zmm21,zmm21,zmm21);
         vxorps(zmm22,zmm22,zmm22);
-        vxorps(zmm23,zmm23,zmm23);
-        vxorps(zmm24,zmm24,zmm24);
-        vmovdqu16(zmm30, zword [rsi+(rowsize)]);            
-        for(int i = 0; i < k; i+=8) {
+        for(int i = 0; i < k; i+=4) {
+            vmovdqu16(zmm30, zword [rsi+(rowsize*i)]);
             vmovdqu16(zmm27, zword [rsi+(rowsize*(i+1))]);
+            vmovdqu16(zmm26, zword [rsi+(rowsize*(i+2))]);
+            vmovdqu16(zmm25, zword [rsi+(rowsize*(i+3))]);
+            // vmovdqu16(zmm24, zword [rsi+(rowsize*(i+4))]);
+            // vmovdqu16(zmm23, zword [rsi+(rowsize*(i+5))]);
+            // vmovdqu16(zmm22, zword [rsi+(rowsize*(i+6))]);
+            // vmovdqu16(zmm21, zword [rsi+(rowsize*(i+7))]);
+            
             vpbroadcastd( zmm5, dword [rdx+(0x04*i)]);
             vpmullw(zmm5 , zmm5 , zmm31);
             vpdpwssds(zmm29, zmm30, zmm5);
             vpbroadcastd( zmm6, dword [rsp+(0x04*i)]);
             vpdpwssds(zmm28, zmm30, zmm6);
-
-            vmovdqu16(zmm30, zword [rsi+(rowsize*(i+2))]);
             vpbroadcastd( zmm7, dword [rdx+(0x04*(i+1))]);
             vpmullw(zmm7 , zmm7 , zmm31);
             vpdpwssds(zmm1, zmm27, zmm7);
             vpbroadcastd( zmm8, dword [rsp+(0x04*(i+1))]);
             vpdpwssds(zmm2, zmm27, zmm8);
-
-            vmovdqu16(zmm27, zword [rsi+(rowsize*(i+3))]);
             vpbroadcastd( zmm9, dword [rdx+(0x04*(i+2))]);
             vpmullw(zmm9 , zmm9 , zmm31);
-            vpdpwssds(zmm3, zmm30, zmm9);
+            vpdpwssds(zmm3, zmm26, zmm9);
             vpbroadcastd(zmm10, dword [rsp+(0x04*(i+2))]); 
-            vpdpwssds(zmm4, zmm30, zmm10);
-
-            vmovdqu16(zmm30, zword [rsi+(rowsize*(i+4))]);
+            vpdpwssds(zmm4, zmm26, zmm10);
             vpbroadcastd(zmm11, dword [rdx+(0x04*(i+3))]);
             vpmullw(zmm11, zmm11, zmm31);
-            vpdpwssds(zmm21, zmm27, zmm11);
+            vpdpwssds(zmm21, zmm25, zmm11);
             vpbroadcastd(zmm12, dword [rsp+(0x04*(i+3))]); 
-            vpdpwssds(zmm22, zmm27, zmm12);
-
-            vmovdqu16(zmm27, zword [rsi+(rowsize*(i+5))]);
-            vpbroadcastd(zmm13, dword [rdx+(0x04*(i+4))]);
-            vpmullw(zmm13, zmm13, zmm31);
-            vpdpwssds(zmm1, zmm30, zmm13);
-            vpbroadcastd(zmm14, dword [rsp+(0x04*(i+4))]); 
-            vpdpwssds(zmm2, zmm30, zmm14);
-
-            vmovdqu16(zmm30, zword [rsi+(rowsize*(i+6))]);
-            vpbroadcastd(zmm15, dword [rdx+(0x04*(i+5))]);
-            vpmullw(zmm15, zmm15, zmm31);
-            vpdpwssds(zmm3, zmm27, zmm15);
-            vpbroadcastd(zmm16, dword [rsp+(0x04*(i+5))]); 
-            vpdpwssds(zmm4, zmm27, zmm16);
-
-            vmovdqu16(zmm27, zword [rsi+(rowsize*(i+7))]);
-            vpbroadcastd(zmm17, dword [rdx+(0x04*(i+6))]);
-            vpmullw(zmm17, zmm17, zmm31);
-            vpdpwssds(zmm29, zmm30, zmm17);
-            vpbroadcastd(zmm18, dword [rsp+(0x04*(i+6))]); 
-            vpdpwssds(zmm28, zmm30, zmm18);
-
-            vmovdqu16(zmm30, zword [rsi+(rowsize+8)]);
-            vpbroadcastd(zmm19, dword [rdx+(0x04*(i+7))]);
-            vpmullw(zmm19, zmm19, zmm31);
-            vpdpwssds(zmm1, zmm27, zmm19);
-            vpbroadcastd(zmm20, dword [rsp+(0x04*(i+7))]); 
-            vpdpwssds(zmm2, zmm27, zmm20);
+            vpdpwssds(zmm22, zmm25, zmm12);
+            // vpbroadcastd(zmm13, dword [rdx+(0x04*(i+4))]);
+            // vpmullw(zmm13, zmm13, zmm31);
+            // vpdpwssds(zmm1, zmm24, zmm13);
+            // vpbroadcastd(zmm14, dword [rsp+(0x04*(i+4))]); 
+            // vpdpwssds(zmm2, zmm24, zmm14);
+            // vpbroadcastd(zmm15, dword [rdx+(0x04*(i+5))]);
+            // vpmullw(zmm15, zmm15, zmm31);
+            // vpdpwssds(zmm3, zmm23, zmm15);
+            // vpbroadcastd(zmm16, dword [rsp+(0x04*(i+5))]); 
+            // vpdpwssds(zmm4, zmm23, zmm16);
+            // vpbroadcastd(zmm17, dword [rdx+(0x04*(i+6))]);
+            // vpmullw(zmm17, zmm17, zmm31);
+            // vpdpwssds(zmm29, zmm22, zmm17);
+            // vpbroadcastd(zmm18, dword [rsp+(0x04*(i+6))]); 
+            // vpdpwssds(zmm28, zmm22, zmm18);
+            // vpbroadcastd(zmm19, dword [rdx+(0x04*(i+7))]);
+            // vpmullw(zmm19, zmm19, zmm31);
+            // vpdpwssds(zmm1, zmm21, zmm19);
+            // vpbroadcastd(zmm20, dword [rsp+(0x04*(i+7))]); 
+            // vpdpwssds(zmm2, zmm21, zmm20);
         }
+        // Sum up imaginary accumulators
         vpaddd(zmm22,zmm22,zmm2);
         vpaddd(zmm28,zmm28,zmm4);
         vpaddd(zmm28,zmm28,zmm22);
-        vpaddd(zmm28,zmm28,zmm24);
         add(rsp, 0x04*k);
         vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
         // Set up writemask k1
         mov(esi, 0xAAAAAAAA);
         kmovd(k1, esi);
+        // Sum up accumulators for real results
+        vpaddd(zmm29,zmm29,zmm3);
+        vpaddd(zmm21,zmm21,zmm1);
+        vpaddd(zmm29,zmm29,zmm21);
         // Interleave real and imaginary
         vmovdqu16(zmm29 | k1, zmm28);
-        // Write to memory
-        vpaddd(zmm21,zmm21,zmm1);
-        vpaddd(zmm29,zmm29,zmm3);
-        vpaddd(zmm29,zmm29,zmm21);
-        vpaddd(zmm29,zmm29,zmm23);
+        // Write everything to memory 
         vmovdqa64(zword [rcx], zmm29);
         ret();
     }
