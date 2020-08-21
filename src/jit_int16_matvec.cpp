@@ -14,7 +14,7 @@
 #include <math.h>
 #include <random>
 #define DIE(...) fprintf(stderr, __VA_ARGS__); exit(1);
-#define FIXED_POINT_FRACTIONAL_BITS 8
+#define FIXED_POINT_FRACTIONAL_BITS 3
 
 inline int16_t floatToFixed(float flo) {
     return (int16_t)(round(flo * (1 << FIXED_POINT_FRACTIONAL_BITS)));
@@ -93,15 +93,16 @@ void outputASM(void* func, int m, int n, std::string filePrefix, std::string typ
 
 Complex_int16 broad16 = {1, -1};
 int8_t temp[64] = {2,3,0,1,6,7,4,5,10,11,8,9,14,15,12,13,18,19,16,17,22,23,20,21,26,27,24,25,30,31,28,29,34,35,
-                                32,33,38,39,36,37,42,43,40,41,46,47,44,45,50,51,48,49,54,55,52,53,58,59,56,57,62,63,60,61};
+                   32,33,38,39,36,37,42,43,40,41,46,47,44,45,50,51,48,49,54,55,52,53,58,59,56,57,62,63,60,61};
 int16_t temp1[32] = {-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1};
+int8_t temp2[64] = {0, 1, 8, 9, 2, 3, 10, 11, 4, 5, 12, 13, 6, 7, 14, 15, 16, 17, 24, 25, 18, 19, 26, 27, 20, 21, 28, 29, 22, 23, 30, 31, 32, 33, 40, 41, 34, 35, 42, 43, 36, 37, 44, 45, 38, 39, 46, 47, 48, 49, 56, 57, 50, 51, 58, 59, 52, 53, 60, 61, 54, 55, 62, 63};
 __m512i swapPairs = _mm512_loadu_si512((const void*)temp);
 __m512i subAdd = _mm512_loadu_si512((const void*)temp1);
-
+__m512i swapAfterPack = _mm512_loadu_si512((const void*)temp2);
 struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)
         : Xbyak::CodeGenerator(200*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
-    {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs
+    {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs, r9=&swapAfterPack
         int rowsize = m*4;
         sub(rsp, 0x04*k); // allocate vec size onto stack
         vpbroadcastd(zmm31, dword [rdi]); //  rdi = {1, -1, ...}
@@ -127,60 +128,49 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
                 vpbroadcastd( zmm5, dword [rdx+(0x04*i)]);
                 vpmullw(zmm5 , zmm5 , zmm31);
                 vpbroadcastd( zmm6, dword [rsp+(0x04*i)]);
-                vpmaddwd(zmm5, zmm30, zmm5);
-                vpmaddwd(zmm6, zmm30, zmm6);
-                vpsllw(zmm5, zmm5, FIXED_POINT_FRACTIONAL_BITS);
-                vpsllw(zmm6, zmm6, FIXED_POINT_FRACTIONAL_BITS);
-                vpaddd(zmm29, zmm29, zmm5);
-                vpaddd(zmm28, zmm29, zmm6);
-
+                vpdpwssds(zmm29, zmm30, zmm5);
+                vpdpwssds(zmm28, zmm30, zmm6);
+            
                 vpbroadcastd( zmm7, dword [rdx+(0x04*(i+1))]);
                 vpmullw(zmm7 , zmm7 , zmm31);
                 vpbroadcastd( zmm8, dword [rsp+(0x04*(i+1))]);
-                vpmaddwd(zmm7, zmm27, zmm7);
-                vpmaddwd(zmm8, zmm27, zmm8);
-                vpsllw(zmm7, zmm7, FIXED_POINT_FRACTIONAL_BITS);
-                vpsllw(zmm8, zmm8, FIXED_POINT_FRACTIONAL_BITS);
-                vpaddd(zmm1, zmm27, zmm7);
-                vpaddd(zmm2, zmm27, zmm8);
+                vpdpwssds(zmm1, zmm27, zmm7);
+                vpdpwssds(zmm2, zmm27, zmm8);
 
                 vpbroadcastd( zmm9, dword [rdx+(0x04*(i+2))]);
                 vpmullw(zmm9 , zmm9 , zmm31);
                 vpbroadcastd(zmm10, dword [rsp+(0x04*(i+2))]);
-                vpmaddwd(zmm9, zmm26, zmm9);
-                vpmaddwd(zmm10, zmm26, zmm10);
-                vpsllw(zmm9, zmm9, FIXED_POINT_FRACTIONAL_BITS);
-                vpsllw(zmm10, zmm10, FIXED_POINT_FRACTIONAL_BITS);
-                vpaddd(zmm3, zmm26, zmm9);
-                vpaddd(zmm4, zmm26, zmm10);
+                vpdpwssds(zmm3, zmm26, zmm9);
+                vpdpwssds(zmm4, zmm26, zmm10);
 
                 vpbroadcastd(zmm11, dword [rdx+(0x04*(i+3))]);
                 vpmullw(zmm11, zmm11, zmm31);
                 vpbroadcastd(zmm12, dword [rsp+(0x04*(i+3))]); 
-                vpmaddwd(zmm11, zmm25, zmm11);
-                vpmaddwd(zmm12, zmm25, zmm12);
-                vpsllw(zmm11, zmm11, FIXED_POINT_FRACTIONAL_BITS);
-                vpsllw(zmm12, zmm12, FIXED_POINT_FRACTIONAL_BITS);
-                vpaddd(zmm21, zmm25, zmm11);
-                vpaddd(zmm22, zmm25, zmm12);
+                vpdpwssds(zmm21, zmm25, zmm11);
+                vpdpwssds(zmm22, zmm25, zmm12);
             }
+            vmovdqu16(zmm0, zword [r9]);      // zmm0 = swapAfterPack
             // Sum up accumulators for imaginary results
             vpaddd(zmm22,zmm22,zmm2);
             vpaddd(zmm28,zmm28,zmm4);
             vpaddd(zmm28,zmm28,zmm22);
+            vpsrad(zmm28, zmm28, FIXED_POINT_FRACTIONAL_BITS);
             // Sum up accumulators for real results
             vpaddd(zmm29,zmm29,zmm3);
             vpaddd(zmm21,zmm21,zmm1);
             vpaddd(zmm29,zmm29,zmm21);
-
-            vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
-            // Set up writemask k1
-            mov(esi, 0xAAAAAAAA);
-            kmovd(k1, esi);
+            vpsrad(zmm29, zmm29, FIXED_POINT_FRACTIONAL_BITS);
+            vpackssdw(zmm29, zmm29, zmm28);
+            vpshufb(zmm29, zmm29, zmm0);
             
-            // Interleave real and imaginary
-            vmovdqu16(zmm29 | k1, zmm28);
-            // Write everything to memory 
+            // vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
+            // // Set up writemask k1
+            // mov(esi, 0xAAAAAAAA);
+            // kmovd(k1, esi);
+            
+            // // Interleave real and imaginary
+            // vmovdqu16(zmm29 | k1, zmm28);
+            // // Write everything to memory 
             vmovdqa64(zword [rcx], zmm29);
         }
         // Other sizes take this kernel
@@ -450,7 +440,7 @@ enum PROGRAM_MODE {
     MINE,
     BOTH
 };
-void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode) {
+void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode, bool real) {
     MKL_Complex8 *mat, *vec, *res;
     Complex_int16 *mat16, *vec16, *res16;
     // Allocate memory for matrix, vector, and resulting vector aligned on 64 byte boundary
@@ -465,17 +455,29 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode) {
     // Randomly generate matrix/vector with values from 0 to 50
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dis(-15.0, 15.0);
+    std::uniform_real_distribution<float> dis(-20.0, 20.0);
+    int mod = 10; //rand()%mod-range
+    int range = mod/2;
     for(int i = 0; i < m*k; i++) {
-        mat[i] = {dis(gen), dis(gen)};
-        mat16[i] = {floatToFixed(mat[i].real), floatToFixed(mat[i].imag)};
+        if(real) {
+            mat[i] = {dis(gen), dis(gen)};
+            mat16[i] = {floatToFixed(mat[i].real), floatToFixed(mat[i].imag)};
+        } else {
+            mat16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
+            mat[i] = {(float)mat16[i].real, (float)mat16[i].imag};
+        }
         // std::cout << "(" << mat[i].real << "," << mat[i].imag << ")" << std::endl;
         // std::cout << "(" << fixedToFloat(mat16[i].real) << "," << fixedToFloat(mat16[i].imag) << ")" << std::endl << std::endl;
 
     }
     for(int i = 0; i < k; i++) {
-        vec[i] = {dis(gen), dis(gen)};
-        vec16[i] = {floatToFixed(vec[i].real), floatToFixed(vec[i].imag)};
+        if(real) {
+            vec[i] = {dis(gen), dis(gen)};
+            vec16[i] = {floatToFixed(vec[i].real), floatToFixed(vec[i].imag)};
+        } else {
+            vec16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
+            vec[i] = {(float)vec16[i].real, (float)vec16[i].imag};
+        }
         // std::cout << "(" << vec[i].real << "," << vec[i].imag << ")" << std::endl;
         // std::cout << "(" << fixedToFloat(vec16[i].real) << "," << fixedToFloat(vec16[i].imag) << ")" << std::endl << std::endl;
     }
@@ -485,9 +487,9 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode) {
     if(mode == MINE || mode == BOTH) {
         JitInt16MatVec jit16(m, k);
         jit16.setProtectModeRE(); // Use Read/Exec mode for security
-        void (*matvec16)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs) = jit16.getCode<void (*)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs)>();
+        void (*matvec16)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs, void* swapAfterPack) = jit16.getCode<void (*)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs, void* swapAfterPack)>();
         for(int i = 0; i < numIter; i++)
-            matvec16((void*)&broad16, mat16, vec16, res16, (void*)&swapPairs);
+            matvec16((void*)&broad16, mat16, vec16, res16, (void*)&swapPairs, (void*)&swapAfterPack);
         //outputASM((void*)matvec16, m, k, std::string("./asm/") + std::to_string(m) + std::string("xK/"), "_myint16");
     }
     double myTime = timeSince(start);
@@ -500,7 +502,12 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode) {
     // Output result
     for(int i = 0; i < m; i++) std::cout << "(" << res[i].real << "," << res[i].imag << ")";
     std::cout << std::endl;
-    for(int i = 0; i < m; i++) std::cout << "(" << fixedToFloat(res16[i].real) << "," << fixedToFloat(res16[i].imag) << ")";
+    for(int i = 0; i < m; i++) {
+        if(real)
+            std::cout << "(" << fixedToFloat(res16[i].real) << "," << fixedToFloat(res16[i].imag) << ")";
+        else 
+            std::cout << res16[i];
+    }
     std::cout << std::endl;
     printf("\n        ---------- \n\n");
     printf("     %ld iterations, (%ldx%ld) * (%ldx%d)\n", numIter, m, k, k, 1);
@@ -521,15 +528,14 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode) {
 }
 
 int main(int argc, char** argv) {
-    float pi =  2 * std::acos(0.0);
-    std::cout << pi*2 << std::endl;
-    int16_t pi_fixed = floatToFixed(pi);
-    int16_t two = floatToFixed((float)2.0);
-    two = two >> 8;
-    pi_fixed *= two;
-    float new_pi = fixedToFloat(pi_fixed);
-    std::cout << new_pi << std::endl;
-    return 0;
+    // float pi =  2 * std::acos(0.0);
+    // std::cout << pi*pi << std::endl;
+    // int16_t pi_fixed = floatToFixed(pi);
+    // int16_t two = floatToFixed((float)2.0);
+    // pi_fixed *= (pi_fixed >> 8);
+    // float new_pi = fixedToFloat(pi_fixed);
+    // std::cout << new_pi << std::endl;
+    // return 0;
     srand(time(0));
     long numIter = 1000000;
     PROGRAM_MODE mode = BOTH;
@@ -544,9 +550,13 @@ int main(int argc, char** argv) {
         exp = strtod(argv[3], NULL);
     }
     numIter = static_cast<long>(pow(10.0,exp));
+    bool real = true;
+    if(argc >= 5) {
+        real = false;
+    }
     //for(long m = 16; m <= 208; m+=16) {
         //for(long k = 16; k <= ; k += 16)
-            benchDimensions(m, k, numIter, mode);    
+            benchDimensions(m, k, numIter, mode, real);    
     //}
     //outputCSV("squares");
     return 0;
