@@ -92,25 +92,18 @@ void outputASM(void* func, int m, int n, std::string filePrefix, std::string typ
     outFile.close();
 }
 
-Complex_int16 broad16 = {1, -1};
-int8_t temp[64] = {2,3,0,1,6,7,4,5,10,11,8,9,14,15,12,13,18,19,16,17,22,23,20,21,26,27,24,25,30,31,28,29,34,35,
-                   32,33,38,39,36,37,42,43,40,41,46,47,44,45,50,51,48,49,54,55,52,53,58,59,56,57,62,63,60,61};
-int16_t temp1[32] = {-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1};
-int8_t temp2[64] = {0, 1, 8, 9, 2, 3, 10, 11, 4, 5, 12, 13, 6, 7, 14, 15, 16, 17, 24, 25, 18, 19, 26, 27, 20, 21, 28, 29, 22, 23, 30, 31, 32, 33, 40, 41, 34, 35, 42, 43, 36, 37, 44, 45, 38, 39, 46, 47, 48, 49, 56, 57, 50, 51, 58, 59, 52, 53, 60, 61, 54, 55, 62, 63};
-__m512i swapPairs = _mm512_loadu_si512((const void*)temp);
-__m512i subAdd = _mm512_loadu_si512((const void*)temp1);
-__m512i swapAfterPack = _mm512_loadu_si512((const void*)temp2);
 struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)
         : Xbyak::CodeGenerator(200*4096, Xbyak::DontSetProtectRWE) // Use Read/Exec mode for security
-    {  // Input parameters rdi=&broad16, rsi=mat, rdx=vec, rcx=res, r8=&swapPairs, r9=&swapAfterPack
+    {  // Input parameters: rdi=mat, rsi=vec, rdx=res, rcx=, r8=, r9=
+        Xbyak::Label broad16,swapPairs,swapAfterPack; // Constant data / "magic numbers" at the end of the struct
         int rowsize = m*4;
         sub(rsp, 0x04*k); // allocate vec size onto stack
-        vpbroadcastd(zmm31, dword [rdi]); //  rdi = {1, -1, ...}
-        vmovdqu16(zmm0, zword [r8]);      // zmm0 = swapPairs
+        vpbroadcastd(zmm31, dword [rip+broad16]);
+        vmovdqu16(zmm0, zword [rip+swapPairs]);      // zmm0 = swapPairs
         // Swap pairs of vector and store that copy on the stack
         for(int i = 0; i < k/16; i++) {
-            vmovdqu16(zmm1, zword [rdx+(i*0x40)]);
+            vmovdqu16(zmm1, zword [rsi+(i*0x40)]);
             vpshufb(zmm1, zmm1, zmm0); 
             vmovdqu16(zword [rsp+(i*0x40)], zmm1);
         }
@@ -121,36 +114,36 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
             vxorps(zmm3,zmm3,zmm3);    vxorps(zmm4,zmm4,zmm4);
             vxorps(zmm21,zmm21,zmm21); vxorps(zmm22,zmm22,zmm22);
             for(int i = 0; i < k; i+=4) {
-                vmovdqu16(zmm30, zword [rsi+(rowsize*i)]);
-                vmovdqu16(zmm27, zword [rsi+(rowsize*(i+1))]);
-                vmovdqu16(zmm26, zword [rsi+(rowsize*(i+2))]);
-                vmovdqu16(zmm25, zword [rsi+(rowsize*(i+3))]);
+                vmovdqu16(zmm30, zword [rdi+(rowsize*i)]);
+                vmovdqu16(zmm27, zword [rdi+(rowsize*(i+1))]);
+                vmovdqu16(zmm26, zword [rdi+(rowsize*(i+2))]);
+                vmovdqu16(zmm25, zword [rdi+(rowsize*(i+3))]);
 
-                vpbroadcastd( zmm5, dword [rdx+(0x04*i)]);
+                vpbroadcastd( zmm5, dword [rsi+(0x04*i)]);
                 vpmullw(zmm5 , zmm5 , zmm31);
                 vpbroadcastd( zmm6, dword [rsp+(0x04*i)]);
                 vpdpwssds(zmm29, zmm30, zmm5);
                 vpdpwssds(zmm28, zmm30, zmm6);
             
-                vpbroadcastd( zmm7, dword [rdx+(0x04*(i+1))]);
+                vpbroadcastd( zmm7, dword [rsi+(0x04*(i+1))]);
                 vpmullw(zmm7 , zmm7 , zmm31);
                 vpbroadcastd( zmm8, dword [rsp+(0x04*(i+1))]);
                 vpdpwssds(zmm1, zmm27, zmm7);
                 vpdpwssds(zmm2, zmm27, zmm8);
 
-                vpbroadcastd( zmm9, dword [rdx+(0x04*(i+2))]);
+                vpbroadcastd( zmm9, dword [rsi+(0x04*(i+2))]);
                 vpmullw(zmm9 , zmm9 , zmm31);
                 vpbroadcastd(zmm10, dword [rsp+(0x04*(i+2))]);
                 vpdpwssds(zmm3, zmm26, zmm9);
                 vpdpwssds(zmm4, zmm26, zmm10);
 
-                vpbroadcastd(zmm11, dword [rdx+(0x04*(i+3))]);
+                vpbroadcastd(zmm11, dword [rsi+(0x04*(i+3))]);
                 vpmullw(zmm11, zmm11, zmm31);
                 vpbroadcastd(zmm12, dword [rsp+(0x04*(i+3))]); 
                 vpdpwssds(zmm21, zmm25, zmm11);
                 vpdpwssds(zmm22, zmm25, zmm12);
             }
-            vmovdqu16(zmm0, zword [r9]);      // zmm0 = swapAfterPack
+            vmovdqu16(zmm0, zword [rip+swapAfterPack]);      // zmm0 = swapAfterPack
             // Sum up accumulators for imaginary results
             vpaddd(zmm22,zmm22,zmm2);
             vpaddd(zmm28,zmm28,zmm4);
@@ -167,164 +160,150 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
             vpackssdw(zmm29, zmm29, zmm28);
             // Correct order of the final result
             vpshufb(zmm29, zmm29, zmm0);
-            
-            // vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
-            // // Set up writemask k1
-            // mov(esi, 0xAAAAAAAA);
-            // kmovd(k1, esi);
-            
-            // // Interleave real and imaginary
-            // vmovdqu16(zmm29 | k1, zmm28);
-            // // Write everything to memory 
-            vmovdqa64(zword [rcx], zmm29);
+            // Write everything to memory 
+            vmovdqa64(zword [rdx], zmm29);
         }
         // Other sizes take this kernel
         else {
             int inc = 0; // overwritten in the loop
             for(int r = 0; r < m; r += inc) { // TODO: Fix this loop
                 // first 16 elements of column 1
-                vmovdqu16(zmm30, zword [rsi+(r*0x04)]); // load first column (a_b)
-                vpbroadcastd(zmm5, dword [rdx]); // zmm5 = c_d (broadcast first two values from vec to all locations)
+                vmovdqu16(zmm30, zword [rdi+(r*0x04)]); // load first column (a_b)
+                vpbroadcastd(zmm5, dword [rsi]); // zmm5 = c_d (broadcast first two values from vec to all locations)
                 vpmullw(zmm5, zmm5, zmm31); // zmm5 = c_minus_d (negate every other value in zmm5)
                 vpbroadcastd(zmm6, dword [rsp]); // zmm6 = d_c
                 vpmaddwd(zmm28, zmm30, zmm6); // zmm28 = imag_res accumulator
                 vpmaddwd(zmm29, zmm30, zmm5); // zmm29 = real_res accumulator
                 inc = 16;
                 if (m-r >= 32) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x40]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x40]);
                     vpmaddwd(zmm27, zmm30, zmm5);
                     vpmaddwd(zmm26, zmm30, zmm6); inc = 32;
                 }
                 if (m-r >= 48) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x80]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x80]);
                     vpmaddwd(zmm25, zmm30, zmm5);
                     vpmaddwd(zmm24, zmm30, zmm6); inc = 48;
                 }
                 if (m-r >= 64) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0xC0]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0xC0]);
                     vpmaddwd(zmm23, zmm30, zmm5);
                     vpmaddwd(zmm22, zmm30, zmm6); inc = 64;
                 }        
                 if (m-r >= 80) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x100]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x100]);
                     vpmaddwd(zmm21, zmm30, zmm5);
                     vpmaddwd(zmm20, zmm30, zmm6); inc = 80;
                 }
                 if (m-r >= 96) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x140]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x140]);
                     vpmaddwd(zmm19, zmm30, zmm5);
                     vpmaddwd(zmm18, zmm30, zmm6); inc = 96;
                 }
                 if (m-r >= 112) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x180]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x180]);
                     vpmaddwd(zmm17, zmm30, zmm5);
                     vpmaddwd(zmm16, zmm30, zmm6); inc = 112;
                 }        
                 if (m-r >= 128) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x1C0]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x1C0]);
                     vpmaddwd(zmm15, zmm30, zmm5);
                     vpmaddwd(zmm14, zmm30, zmm6); inc = 128;
                 }        
                 if (m-r >= 144) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x200]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x200]);
                     vpmaddwd(zmm13, zmm30, zmm5);
                     vpmaddwd(zmm12, zmm30, zmm6); inc = 144;
                 }
                 if (m-r >= 160) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x240]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x240]);
                     vpmaddwd(zmm11, zmm30, zmm5);
                     vpmaddwd(zmm10, zmm30, zmm6); inc = 160;
                 }
                 if (m-r >= 176) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x280]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x280]);
                     vpmaddwd(zmm9 , zmm30, zmm5);
                     vpmaddwd(zmm8 , zmm30, zmm6); inc = 176;
                 }        
                 if (m-r >= 192) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x2C0]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x2C0]);
                     vpmaddwd(zmm7 , zmm30, zmm5);
                     vpmaddwd(zmm4 , zmm30, zmm6); inc = 192;
                 }        
                 if (m-r >= 208) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+0x300]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+0x300]);
                     vpmaddwd(zmm3 , zmm30, zmm5);
                     vpmaddwd(zmm2 , zmm30, zmm6); inc = 208;
                 } 
                 for(int i = 1; i < k; i++) {
-                    vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)]);
-                    vpbroadcastd(zmm5, dword [rdx+(0x04*i)]);
+                    vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)]);
+                    vpbroadcastd(zmm5, dword [rsi+(0x04*i)]);
                     vpmullw(zmm5, zmm5, zmm31);
                     vpbroadcastd(zmm6, dword [rsp+(0x04*i)]); 
                     vpdpwssds(zmm29, zmm30, zmm5);
                     vpdpwssds(zmm28, zmm30, zmm6);
                     if (m-r >= 32) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x40]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x40]);
                         vpdpwssds(zmm27, zmm30, zmm5);
                         vpdpwssds(zmm26, zmm30, zmm6);
                     } 
                     if (m-r >= 48) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x80]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x80]);
                         vpdpwssds(zmm25, zmm30, zmm5);
                         vpdpwssds(zmm24, zmm30, zmm6);
                     } 
                     if (m-r >= 64) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0xC0]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0xC0]);
                         vpdpwssds(zmm23, zmm30, zmm5);
                         vpdpwssds(zmm22, zmm30, zmm6);
                     }
                     if (m-r >= 80) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x100]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x100]);
                         vpdpwssds(zmm21, zmm30, zmm5);
                         vpdpwssds(zmm20, zmm30, zmm6);
                     } 
                     if (m-r >= 96) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x140]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x140]);
                         vpdpwssds(zmm19, zmm30, zmm5);
                         vpdpwssds(zmm18, zmm30, zmm6);
                     } 
                     if (m-r >= 112) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x180]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x180]);
                         vpdpwssds(zmm17, zmm30, zmm5);
                         vpdpwssds(zmm16, zmm30, zmm6);
                     }
                     if (m-r >= 128) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x1C0]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x1C0]);
                         vpdpwssds(zmm15, zmm30, zmm5);
                         vpdpwssds(zmm14, zmm30, zmm6);
                     }
                     if (m-r >= 144) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x200]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x200]);
                         vpdpwssds(zmm13, zmm30, zmm5);
                         vpdpwssds(zmm12, zmm30, zmm6);
                     } 
                     if (m-r >= 160) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x240]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x240]);
                         vpdpwssds(zmm11, zmm30, zmm5);
                         vpdpwssds(zmm10, zmm30, zmm6);
                     } 
                     if (m-r >= 176) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x280]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x280]);
                         vpdpwssds(zmm9 , zmm30, zmm5);
                         vpdpwssds(zmm8 , zmm30, zmm6);
                     }
                     if (m-r >= 192) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x2C0]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x2C0]);
                         vpdpwssds(zmm7 , zmm30, zmm5);
                         vpdpwssds(zmm4 , zmm30, zmm6);
                     }
                     if (m-r >= 208) {
-                        vmovdqu16(zmm30, zword [rsi+(r*0x04)+(rowsize*i)+0x300]);
+                        vmovdqu16(zmm30, zword [rdi+(r*0x04)+(rowsize*i)+0x300]);
                         vpdpwssds(zmm3 , zmm30, zmm5);
                         vpdpwssds(zmm2 , zmm30, zmm6);
                     }
                 }
-                vmovdqu16(zmm0, zword [r9]);      // zmm0 = swapAfterPack
-                // vpslld(zmm28, zmm28, 0x10); // shift imag_res 16 bits left
-                // // Set up writemask k1
-                // mov(esi, 0xAAAAAAAA);
-                // kmovd(k1, esi);
-                // // Interleave real and imaginary
-                // vmovdqu16(zmm29 | k1, zmm28);
+                vmovdqu16(zmm0, zword [rip+swapAfterPack]);      // zmm0 = swapAfterPack
                 vpsrad(zmm28, zmm28, FIXED_POINT_FRACTIONAL_BITS);
                 vpsrad(zmm29, zmm29, FIXED_POINT_FRACTIONAL_BITS);
                 // Downcast from 32 bits to 16 bits and keep sign, packing both results into zmm29
@@ -332,78 +311,88 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
                 // Correct order of the final result
                 vpshufb(zmm29, zmm29, zmm0);
                 // Write to memory
-                vmovdqa64(zword [rcx+(r*0x04)], zmm29);
+                vmovdqa64(zword [rdx+(r*0x04)], zmm29);
                 if (m-r >= 32) {
                     vpsrad(zmm27, zmm27, FIXED_POINT_FRACTIONAL_BITS);
                     vpsrad(zmm26, zmm26, FIXED_POINT_FRACTIONAL_BITS);
                     vpackssdw(zmm27, zmm27, zmm26);
                     vpshufb(zmm27, zmm27, zmm0);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x40], zmm27);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x40], zmm27);
                 }
                 if (m-r >= 48) {
                     vpsrad(zmm25, zmm25, FIXED_POINT_FRACTIONAL_BITS);
                     vpsrad(zmm24, zmm24, FIXED_POINT_FRACTIONAL_BITS);
                     vpackssdw(zmm25, zmm25, zmm24);
                     vpshufb(zmm25, zmm25, zmm0);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x80], zmm25);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x80], zmm25);
                 }
                 if (m-r >= 64) {
                     vpsrad(zmm23, zmm23, FIXED_POINT_FRACTIONAL_BITS);
                     vpsrad(zmm22, zmm22, FIXED_POINT_FRACTIONAL_BITS);
                     vpackssdw(zmm23, zmm23, zmm22);
                     vpshufb(zmm23, zmm23, zmm0);
-                    vmovdqa64(zword [rcx+(r*0x04)+0xC0], zmm23);
+                    vmovdqa64(zword [rdx+(r*0x04)+0xC0], zmm23);
                 }
-                if (m-r >= 80) {
+                if (m-r >= 80) { // TODO: fix here and below with new rotate pack and shuffle instructions 
                     vpslld(zmm20, zmm20, 0x10);
                     vmovdqu16(zmm21 | k1, zmm20);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x100], zmm21);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x100], zmm21);
                 }
                 if (m-r >= 96) {
                     vpslld(zmm18, zmm18, 0x10);
                     vmovdqu16(zmm19 | k1, zmm18);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x140], zmm19);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x140], zmm19);
                 }
                 if (m-r >= 112) {
                     vpslld(zmm16, zmm16, 0x10);
                     vmovdqu16(zmm17 | k1, zmm16);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x180], zmm17);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x180], zmm17);
                 }
                 if (m-r >= 128) {
                     vpslld(zmm14, zmm14, 0x10);
                     vmovdqu16(zmm15 | k1, zmm14);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x1C0], zmm15);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x1C0], zmm15);
                 }
                 if (m-r >= 144) {
                     vpslld(zmm12, zmm12, 0x10);
                     vmovdqu16(zmm13 | k1, zmm12);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x200], zmm13);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x200], zmm13);
                 }
                 if (m-r >= 160) {
                     vpslld(zmm10, zmm10, 0x10);
                     vmovdqu16(zmm11 | k1, zmm10);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x240], zmm11);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x240], zmm11);
                 }
                 if (m-r >= 176) {
                     vpslld(zmm8, zmm8, 0x10);
                     vmovdqu16(zmm9 | k1, zmm8);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x280], zmm9);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x280], zmm9);
                 }
                 if (m-r >= 192) {
                     vpslld(zmm4, zmm4, 0x10);
                     vmovdqu16(zmm7 | k1, zmm4);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x2C0], zmm7);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x2C0], zmm7);
                 }
                 if (m-r >= 208) {
                     vpslld(zmm2, zmm2, 0x10);
                     vmovdqu16(zmm3 | k1, zmm2);
-                    vmovdqa64(zword [rcx+(r*0x04)+0x300], zmm3);
+                    vmovdqa64(zword [rdx+(r*0x04)+0x300], zmm3);
                 }
             }
         }
         add(rsp, 0x04*k); // deallocate vec size from stack
         vzeroupper(); // needed? I think needed if using both AVX2 and other SIMD extensions
         ret();
+
+        // Constant data, to access use [rip + label_name]
+        L(broad16);
+        dw(1); dw(-1);
+
+        L(swapPairs);
+        db(2);db(3);db(0);db(1);db(6);db(7);db(4);db(5);db(10);db(11);db(8);db(9);db(14);db(15);db(12);db(13);db(18);db(19);db(16);db(17);db(22);db(23);db(20);db(21);db(26);db(27);db(24);db(25);db(30);db(31);db(28);db(29);db(34);db(35);db(32);db(33);db(38);db(39);db(36);db(37);db(42);db(43);db(40);db(41);db(46);db(47);db(44);db(45);db(50);db(51);db(48);db(49);db(54);db(55);db(52);db(53);db(58);db(59);db(56);db(57);db(62);db(63);db(60);db(61);
+        
+        L(swapAfterPack);
+        db(0);db(1);db(8);db(9);db(2);db(3);db(10);db(11);db(4);db(5);db(12);db(13);db(6);db(7);db(14);db(15);db(16);db(17);db(24);db(25);db(18);db(19);db(26);db(27);db(20);db(21);db(28);db(29);db(22);db(23);db(30);db(31);db(32);db(33);db(40);db(41);db(34);db(35);db(42);db(43);db(36);db(37);db(44);db(45);db(38);db(39);db(46);db(47);db(48);db(49);db(56);db(57);db(50);db(51);db(58);db(59);db(52);db(53);db(60);db(61);db(54);db(55);db(62);db(63);
     }
 };
 
@@ -458,6 +447,21 @@ bool vectorsEqual(MKL_Complex8* src, Complex_int16* mine, long m) {
     return true;
 }
 
+// byl_jit API starts here
+ 
+typedef enum {
+    BYL_JIT_SUCCESS = 0,
+    BYL_NO_JIT = 1,
+    BYL_JIT_ERROR = 2
+} byl_jit_status_t;
+
+byl_jit_status_t byl_jit_create_matvec(void** jitter, long m, long k) {
+    // JitInt16MatVec jit16(m, k, (void*)&broad16, (void*)&swapPairs, (void*)&swapAfterPack);
+    // jit16.setProtectModeRE(); // Use Read/Exec mode for security
+    // void (*matvec16)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs, void* swapAfterPack) = jit16.getCode<void (*)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs, void* swapAfterPack)>();
+    //*jitter(void*, const Complex_int16*, const Complex_int16*, Complex_int16*, void*, void*) = matvec16;
+}
+
 enum PROGRAM_MODE {
     MKL,
     MINE,
@@ -485,7 +489,7 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode, bool real)
         if(real) {
             mat[i] = {mat_dis(gen), mat_dis(gen)};
             mat16[i] = {floatToFixed(mat[i].real), floatToFixed(mat[i].imag)};
-        } else {
+        } else { // integer
             mat16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
             mat[i] = {(float)mat16[i].real, (float)mat16[i].imag};
         }
@@ -511,9 +515,10 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode, bool real)
     if(mode == MINE || mode == BOTH) {
         JitInt16MatVec jit16(m, k);
         jit16.setProtectModeRE(); // Use Read/Exec mode for security
-        void (*matvec16)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs, void* swapAfterPack) = jit16.getCode<void (*)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs, void* swapAfterPack)>();
+        // void (*matvec16)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs, void* swapAfterPack) = jit16.getCode<void (*)(void* broad, const Complex_int16*, const Complex_int16*, Complex_int16*, void* swapPairs, void* swapAfterPack)>();
+        void (*matvec16)(const Complex_int16*, const Complex_int16*, Complex_int16*) = jit16.getCode<void (*)(const Complex_int16*, const Complex_int16*, Complex_int16*)>();
         for(int i = 0; i < numIter; i++)
-            matvec16((void*)&broad16, mat16, vec16, res16, (void*)&swapPairs, (void*)&swapAfterPack);
+            matvec16(mat16, vec16, res16);
         //outputASM((void*)matvec16, m, k, std::string("./asm/") + std::to_string(m) + std::string("xK/"), "_myint16");
     }
     double myTime = timeSince(start);
@@ -529,7 +534,7 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode, bool real)
     for(int i = 0; i < m; i++) {
         if(real)
             std::cout << "(" << std::fixed << std::setprecision(2) << fixedToFloat(res16[i].real) << "," << std::fixed << std::setprecision(2) << fixedToFloat(res16[i].imag) << ")";
-        else 
+        else
             std::cout << res16[i];
     }
     std::cout << std::endl;
@@ -551,15 +556,8 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode, bool real)
     free(mat16); free(vec16); free(res16);
 }
 
+
 int main(int argc, char** argv) {
-    // float pi =  2 * std::acos(0.0);
-    // std::cout << pi*pi << std::endl;
-    // int16_t pi_fixed = floatToFixed(pi);
-    // int16_t two = floatToFixed((float)2.0);
-    // pi_fixed *= (pi_fixed >> 8);
-    // float new_pi = fixedToFloat(pi_fixed);
-    // std::cout << new_pi << std::endl;
-    // return 0;
     srand(time(0));
     long numIter = 1000000;
     PROGRAM_MODE mode = BOTH;

@@ -7,9 +7,14 @@
 #     res.append(index*2+1)
 
 # print(res)
-count = 0
-for num in range(0, 200):
-    numString = str(num)
-    if "11" in numString:
-        count+=1
-print(count)
+
+# count = 0
+# for num in range(0, 200):
+#     numString = str(num)
+#     if "11" in numString:
+#         count+=1
+# print(count)
+
+swapAfterPack = [0, 1, 8, 9, 2, 3, 10, 11, 4, 5, 12, 13, 6, 7, 14, 15, 16, 17, 24, 25, 18, 19, 26, 27, 20, 21, 28, 29, 22, 23, 30, 31, 32, 33, 40, 41, 34, 35, 42, 43, 36, 37, 44, 45, 38, 39, 46, 47, 48, 49, 56, 57, 50, 51, 58, 59, 52, 53, 60, 61, 54, 55, 62, 63]
+for num in swapAfterPack:
+    print("db(" + str(num) + ");", end="")
