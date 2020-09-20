@@ -1,13 +1,11 @@
-//#include "byl_jit_int16_matvec.hpp"
+#ifndef BYL_JIT_INT16_MATVEC
+#define BYL_JIT_INT16_MATVEC
 #include <stdint.h>
 #include <xbyak/xbyak.h>
-#include <Zydis/Zydis.h>
 #include <fstream>
 #include <string.h>
 #include <iostream>
-#include "immintrin.h"
 #include <complex>
-#include "mkl.h"
 #include "timer.hpp"
 #include <iomanip>
 #include <vector>
@@ -39,10 +37,6 @@ struct Complex_int16 {
         return os;
     }
 };
-typedef void (*byl_matvec_jit_kernel_t)(const Complex_int16*,  const Complex_int16*,  Complex_int16*);
-
-byl_matvec_jit_kernel_t byl_jit_create_matvec(long m, long k, void** jitter);
-void byl_jit_destroy_matvec(byl_matvec_jit_kernel_t);
 
 inline int16_t floatToFixed(float flo) {
     return (int16_t)(round(flo * (1 << FIXED_POINT_FRACTIONAL_BITS)));
@@ -51,49 +45,6 @@ inline int16_t floatToFixed(float flo) {
 inline float fixedToFloat(int16_t fix) {
     return ((float)fix / (float)(1 << FIXED_POINT_FRACTIONAL_BITS));
 }
-
-void outputASM(void* func, int m, int n, std::string filePrefix, std::string type) {
-    // Initialize decoder context
-    ZydisDecoder decoder;
-    ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64);
-
-    // Initialize formatter. Only required when you actually plan to do instruction
-    // formatting ("disassembling"), like we do here
-    ZydisFormatter formatter;
-    ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
-
-    // Loop over the instructions in our buffer.
-    // The runtime-address (instruction pointer) is chosen arbitrary here in order to better
-    // visualize relative addressing
-    ZyanU64 runtime_address = (*(uintptr_t*)func);
-    ZyanUSize offset = 0;
-    const ZyanUSize length = 7000; // breaks on ret, should never reach length 7000
-    ZydisDecodedInstruction instruction;
-
-    // File to output ASM
-    std::ofstream outFile;
-    std::string filename = filePrefix + std::to_string(m) + "x" + std::to_string(n) + type + ".asm";
-    outFile.open(filename);
-    while (ZYAN_SUCCESS(ZydisDecoderDecodeBuffer(&decoder, (void*)((uintptr_t)func + offset), length - offset, &instruction))) {
-        // Print current instruction pointer.
-        // std::cout << "0x" << std::uppercase << std::hex << runtime_address << "   ";
-        outFile << "0x" << std::uppercase << std::hex << runtime_address << "   ";
-        // Format & print the binary instruction structure to human readable format
-        char buffer[256];
-        ZydisFormatterFormatInstruction(&formatter, &instruction, buffer, sizeof(buffer),
-            runtime_address);
-        //puts(buffer);
-        outFile << buffer << "\n";
-        offset += instruction.length;
-        runtime_address += instruction.length;
-        if(strstr(buffer, "ret") != NULL)
-        break;
-    }
-    outFile.close();
-}
-
-
-// uint8_t buf[8192] __attribute__((aligned(4096)));
 
 struct JitInt16MatVec : Xbyak::CodeGenerator {
     JitInt16MatVec(int m, int k)//, void* userPtr = 0, size_t size = Xbyak::DEFAULT_MAX_CODE_SIZE)
@@ -399,180 +350,137 @@ struct JitInt16MatVec : Xbyak::CodeGenerator {
     }
 };
 
-double runJITCGEMM(MKL_Complex8* a, MKL_Complex8* b, MKL_Complex8* c, MKL_INT m, MKL_INT k, int numIter) {
-    if(numIter == 0) return 0.0;
-    MKL_Complex8 alpha = {1, 0};
-    MKL_Complex8 beta = {0, 0};
-    MKL_INT lda = m;
-    MKL_INT ldb = k;
-    MKL_INT ldc = m;
-    double start = getTime();
-    // Create a handle and generate GEMM kernel
-    void* jitter;
-    mkl_jit_status_t status = mkl_jit_create_cgemm(&jitter, MKL_COL_MAJOR, MKL_NOTRANS, MKL_NOTRANS, m, 1, k, &alpha, lda, ldb, &beta, ldc);
-    if (MKL_JIT_ERROR == status) {
-        fprintf(stderr, "Error: insufficient memory to JIT and store the DGEMM kernel\n");
-        exit(1);
-    }
-    // Get kernel associated with handle
-    cgemm_jit_kernel_t my_cgemm = mkl_jit_get_cgemm_ptr(jitter);
-    for(int i = 0; i < numIter; i++)
-        my_cgemm(jitter, a, b, c); // Repeatedly execute the GEMM kernel
-    // Destroy the created handle/GEMM kernel
-    mkl_jit_destroy((void*)my_cgemm);
-    double ret = timeSince(start);
-    return ret;
-}
-
-std::vector<std::string> dimensions;
-std::vector<double> mklTimes, myTimes;
-void outputCSV(std::string filename) {
-    std::ofstream outFile;
-    outFile.open(filename+".csv");
-    outFile << "Dimensions,MKL,My int16,Speedup,";
-    outFile << "Overall avg. speedup:," << std::accumulate(mklTimes.begin(), mklTimes.end(), 0.0)/(double)std::accumulate(myTimes.begin(), myTimes.end(), 0.0) << ",\n";
-    for(int i = 0; i < dimensions.size(); i++)
-        outFile << dimensions[i] << "," << mklTimes[i] << "," << myTimes[i] << "," << mklTimes[i]/myTimes[i] << ",\n";
-    outFile.close();
-    dimensions.clear(); mklTimes.clear(); myTimes.clear();
-}
-
-bool cmpf(MKL_Complex8 a, Complex_int16 b, float epsilon = TOLERANCE) {
-    return (fabs(a.real - fixedToFloat(b.real)) < epsilon) && (fabs(a.imag - fixedToFloat(b.imag)) < epsilon);
-}
-
-bool vectorsEqual(MKL_Complex8* src, Complex_int16* mine, long m) {
-    for(int i = 0; i < m; i++) {
-        if(!(cmpf(src[i], mine[i])))
-            return false;
-    }
-    return true;
-}
-
-// byl_jit API starts here
-
-// typedef enum {
-//     BYL_JIT_SUCCESS = 0,
-//     BYL_NO_JIT = 1,
-//     BYL_JIT_ERROR = 2
-// } byl_jit_status_t;
-
-// byl_matvec_jit_kernel_t byl_jit_create_matvec(long m, long k, void** jitter) {
-//     using namespace Xbyak;
-//     const size_t codeSize = 8096;
-//     //*jitter = aligned_alloc(4096, codeSize);//uint8 buf[codeSize + 16];
-//     //uint8 *p = CodeArray::getAlignedAddress(buf);
-//     if (!CodeArray::protect(jitter, codeSize, CodeArray::PROTECT_RWE)) {
-//         fprintf(stderr, "can't protect\n");
-//     }
-//     JitInt16MatVec jit16(m, k, *jitter, codeSize);
-//     //jit16.setProtectModeRE(); // Use Read/Exec mode for security
-//     byl_matvec_jit_kernel_t matvec16 = jit16.getCode<void (*)(const Complex_int16*, const Complex_int16*, Complex_int16*)>();
-//     const uint8 *matvec16p = reinterpret_cast<const uint8*>(matvec16);
-//     if (matvec16p != *jitter) {
-//         fprintf(stderr, "internal error %p %p\n", *jitter, matvec16p);
-//     }
-//     return matvec16;
+// bool cmpf(MKL_Complex8 a, Complex_int16 b, float epsilon = TOLERANCE) {
+//     return (fabs(a.real - fixedToFloat(b.real)) < epsilon) && (fabs(a.imag - fixedToFloat(b.imag)) < epsilon);
 // }
 
-// void byl_jit_destroy_matvec(byl_matvec_jit_kernel_t matvec) {
-//     void* matvecp = reinterpret_cast<void*>(matvec);
-//     //Xbyak::CodeArray::protect(*jitter, 8096, Xbyak::CodeArray::PROTECT_RW);
-//     free(matvecp);
+// bool vectorsEqual(MKL_Complex8* src, Complex_int16* mine, long m) {
+//     for(int i = 0; i < m; i++) {
+//         if(!(cmpf(src[i], mine[i])))
+//             return false;
+//     }
+//     return true;
 // }
 
-enum PROGRAM_MODE {
-    MKL,
-    BYL,
-    BOTH
-};
+// double runJITCGEMM(MKL_Complex8* a, MKL_Complex8* b, MKL_Complex8* c, MKL_INT m, MKL_INT k, int numIter) {
+//     if(numIter == 0) return 0.0;
+//     MKL_Complex8 alpha = {1, 0};
+//     MKL_Complex8 beta = {0, 0};
+//     MKL_INT lda = m;
+//     MKL_INT ldb = k;
+//     MKL_INT ldc = m;
+//     double start = getTime();
+//     // Create a handle and generate GEMM kernel
+//     void* jitter;
+//     mkl_jit_status_t status = mkl_jit_create_cgemm(&jitter, MKL_COL_MAJOR, MKL_NOTRANS, MKL_NOTRANS, m, 1, k, &alpha, lda, ldb, &beta, ldc);
+//     if (MKL_JIT_ERROR == status) {
+//         fprintf(stderr, "Error: insufficient memory to JIT and store the DGEMM kernel\n");
+//         exit(1);
+//     }
+//     // Get kernel associated with handle
+//     cgemm_jit_kernel_t my_cgemm = mkl_jit_get_cgemm_ptr(jitter);
+//     for(int i = 0; i < numIter; i++)
+//         my_cgemm(jitter, a, b, c); // Repeatedly execute the GEMM kernel
+//     // Destroy the created handle/GEMM kernel
+//     mkl_jit_destroy((void*)my_cgemm);
+//     double ret = timeSince(start);
+//     return ret;
+// }
 
-void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode, bool real) {
-    MKL_Complex8 *mat, *vec, *res;
-    Complex_int16 *mat16, *vec16, *res16;
-    // Allocate memory for matrix, vector, and resulting vector aligned on 64 byte boundary
-    mat = (MKL_Complex8*)mkl_calloc(m*k, sizeof(MKL_Complex8), 64);
-    vec = (MKL_Complex8*)mkl_calloc(k, sizeof(MKL_Complex8), 64);
-    res = (MKL_Complex8*)mkl_calloc(m, sizeof(MKL_Complex8), 64);
-    // Int16 version
-    mat16 = (Complex_int16*)aligned_alloc(128, m*k*sizeof(Complex_int16));
-    vec16 = (Complex_int16*)aligned_alloc(128, k*sizeof(Complex_int16));
-    res16 = (Complex_int16*)aligned_alloc(128, m*sizeof(Complex_int16));
-    memset(res16, 0, m*sizeof(Complex_int16));
-    // Randomly generate matrix/vector with values from 0 to 50
-    std::random_device rd;
-    std::mt19937 gen(10);
-    std::uniform_real_distribution<float> mat_dis(-1.0, 1.0);
-    int mod = 10; //rand()%mod-range
-    int range = mod/2;
-    for(int i = 0; i < m*k; i++) {
-        if(real) {
-            mat[i] = {mat_dis(gen), mat_dis(gen)};
-            mat16[i] = {floatToFixed(mat[i].real), floatToFixed(mat[i].imag)};
-        } else { // integer
-            mat16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
-            mat[i] = {(float)mat16[i].real, (float)mat16[i].imag};
-        }
-        // std::cout << "(" << mat[i].real << "," << mat[i].imag << ")" << std::endl;
-        // std::cout << "(" << fixedToFloat(mat16[i].real) << "," << fixedToFloat(mat16[i].imag) << ")" << std::endl << std::endl;
 
-    }
-    std::uniform_real_distribution<float> vec_dis(-5.0, 5.0);
-    for(int i = 0; i < k; i++) {
-        if(real) {
-            vec[i] = {vec_dis(gen), vec_dis(gen)};
-            vec16[i] = {floatToFixed(vec[i].real), floatToFixed(vec[i].imag)};
-        } else {
-            vec16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
-            vec[i] = {(float)vec16[i].real, (float)vec16[i].imag};
-        }
-        // std::cout << "(" << vec[i].real << "," << vec[i].imag << ")" << std::endl;
-        // std::cout << "(" << fixedToFloat(vec16[i].real) << "," << fixedToFloat(vec16[i].imag) << ")" << std::endl << std::endl;
-    }
-    double mklTime = 0.0;
-    double start = getTime();
-    // Uncomment below for int16
-    if(mode == BYL || mode == BOTH) {
-        JitInt16MatVec jit16(m, k);
-        jit16.setProtectModeRE(); // Use Read/Exec mode for security
-        void (*matvec16)(const Complex_int16*, const Complex_int16*, Complex_int16*) = jit16.getCode<void (*)(const Complex_int16*, const Complex_int16*, Complex_int16*)>();
-        for(int i = 0; i < numIter; i++)
-            matvec16(mat16, vec16, res16);
-    }
-    double myTime = timeSince(start);
 
-    // Uncomment below for MKL
-    if(mode == MKL || mode == BOTH) {
-        mklTime = runJITCGEMM(mat, vec, res, m, k, numIter);
-    }
-    // Save .asm of my function (MKL .asm is saved in runJITCGEMM)
-    // Output result
-    for(int i = 0; i < m; i++) std::cout << "(" << std::fixed << std::setprecision(2) << res[i].real << "," << std::fixed << std::setprecision(2) << res[i].imag << ")";
-    std::cout << std::endl;
-    for(int i = 0; i < m; i++) {
-        if(real)
-            std::cout << "(" << std::fixed << std::setprecision(2) << fixedToFloat(res16[i].real) << "," << std::fixed << std::setprecision(2) << fixedToFloat(res16[i].imag) << ")";
-        else
-            std::cout << res16[i];
-    }
-    std::cout << std::endl;
-    printf("\n        ---------- \n\n");
-    printf("     %ld iterations, (%ldx%ld) * (%ldx%d)\n", numIter, m, k, k, 1);
-    printf("MKL JIT cgemm: %.3f µs per iteration\n", mklTime/(double)numIter);
-    printf(" my JIT int16: %.3f µs per iteration\n", myTime/(double)numIter);
-    #define RESET   "\033[0m" // Terminal color codes
-    #define BOLDGREEN   "\033[1m\033[32m" 
-    std::cout << "  " << BOLDGREEN << std::fixed << std::setprecision(2) << mklTime/myTime << "x" << RESET << " MKL JIT cgemm" << std::endl;
-    std::cout << "---------------------------------\n" << std::endl;
-    // Assert resulting values are equal
-    if(mode == BOTH) assert(vectorsEqual(res, res16, m));
-    dimensions.push_back(std::to_string(m) + "x" + std::to_string(k));
-    mklTimes.push_back(mklTime/(double)numIter);
-    myTimes.push_back(myTime/(double)numIter);
-    // Free allocated memory
-    mkl_free(mat); mkl_free(vec); mkl_free(res);
-    free(mat16); free(vec16); free(res16);
-}
+// enum PROGRAM_MODE {
+//     MKL,
+//     BYL,
+//     BOTH
+// };
+
+// void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode, bool real) {
+//     MKL_Complex8 *mat, *vec, *res;
+//     Complex_int16 *mat16, *vec16, *res16;
+//     // Allocate memory for matrix, vector, and resulting vector aligned on 64 byte boundary
+//     mat = (MKL_Complex8*)mkl_calloc(m*k, sizeof(MKL_Complex8), 64);
+//     vec = (MKL_Complex8*)mkl_calloc(k, sizeof(MKL_Complex8), 64);
+//     res = (MKL_Complex8*)mkl_calloc(m, sizeof(MKL_Complex8), 64);
+//     // Int16 version
+//     mat16 = (Complex_int16*)aligned_alloc(128, m*k*sizeof(Complex_int16));
+//     vec16 = (Complex_int16*)aligned_alloc(128, k*sizeof(Complex_int16));
+//     res16 = (Complex_int16*)aligned_alloc(128, m*sizeof(Complex_int16));
+//     memset(res16, 0, m*sizeof(Complex_int16));
+//     // Randomly generate matrix/vector with values from 0 to 50
+//     std::random_device rd;
+//     std::mt19937 gen(10);
+//     std::uniform_real_distribution<float> mat_dis(-1.0, 1.0);
+//     int mod = 10; //rand()%mod-range
+//     int range = mod/2;
+//     for(int i = 0; i < m*k; i++) {
+//         if(real) {
+//             mat[i] = {mat_dis(gen), mat_dis(gen)};
+//             mat16[i] = {floatToFixed(mat[i].real), floatToFixed(mat[i].imag)};
+//         } else { // integer
+//             mat16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
+//             mat[i] = {(float)mat16[i].real, (float)mat16[i].imag};
+//         }
+//         // std::cout << "(" << mat[i].real << "," << mat[i].imag << ")" << std::endl;
+//         // std::cout << "(" << fixedToFloat(mat16[i].real) << "," << fixedToFloat(mat16[i].imag) << ")" << std::endl << std::endl;
+
+//     }
+//     std::uniform_real_distribution<float> vec_dis(-5.0, 5.0);
+//     for(int i = 0; i < k; i++) {
+//         if(real) {
+//             vec[i] = {vec_dis(gen), vec_dis(gen)};
+//             vec16[i] = {floatToFixed(vec[i].real), floatToFixed(vec[i].imag)};
+//         } else {
+//             vec16[i] = {(int16_t)(rand()%mod-range), (int16_t)(rand()%mod-range)};
+//             vec[i] = {(float)vec16[i].real, (float)vec16[i].imag};
+//         }
+//         // std::cout << "(" << vec[i].real << "," << vec[i].imag << ")" << std::endl;
+//         // std::cout << "(" << fixedToFloat(vec16[i].real) << "," << fixedToFloat(vec16[i].imag) << ")" << std::endl << std::endl;
+//     }
+//     double mklTime = 0.0;
+//     double start = getTime();
+//     // Uncomment below for int16
+//     if(mode == BYL || mode == BOTH) {
+//         JitInt16MatVec jit16(m, k);
+//         jit16.setProtectModeRE(); // Use Read/Exec mode for security
+//         void (*matvec16)(const Complex_int16*, const Complex_int16*, Complex_int16*) = jit16.getCode<void (*)(const Complex_int16*, const Complex_int16*, Complex_int16*)>();
+//         for(int i = 0; i < numIter; i++)
+//             matvec16(mat16, vec16, res16);
+//     }
+//     double myTime = timeSince(start);
+
+//     // Uncomment below for MKL
+//     if(mode == MKL || mode == BOTH) {
+//         mklTime = runJITCGEMM(mat, vec, res, m, k, numIter);
+//     }
+//     // Save .asm of my function (MKL .asm is saved in runJITCGEMM)
+//     // Output result
+//     for(int i = 0; i < m; i++) std::cout << "(" << std::fixed << std::setprecision(2) << res[i].real << "," << std::fixed << std::setprecision(2) << res[i].imag << ")";
+//     std::cout << std::endl;
+//     for(int i = 0; i < m; i++) {
+//         if(real)
+//             std::cout << "(" << std::fixed << std::setprecision(2) << fixedToFloat(res16[i].real) << "," << std::fixed << std::setprecision(2) << fixedToFloat(res16[i].imag) << ")";
+//         else
+//             std::cout << res16[i];
+//     }
+//     std::cout << std::endl;
+//     printf("\n        ---------- \n\n");
+//     printf("     %ld iterations, (%ldx%ld) * (%ldx%d)\n", numIter, m, k, k, 1);
+//     printf("MKL JIT cgemm: %.3f µs per iteration\n", mklTime/(double)numIter);
+//     printf(" my JIT int16: %.3f µs per iteration\n", myTime/(double)numIter);
+//     #define RESET   "\033[0m" // Terminal color codes
+//     #define BOLDGREEN   "\033[1m\033[32m" 
+//     std::cout << "  " << BOLDGREEN << std::fixed << std::setprecision(2) << mklTime/myTime << "x" << RESET << " MKL JIT cgemm" << std::endl;
+//     std::cout << "---------------------------------\n" << std::endl;
+//     // Assert resulting values are equal
+//     if(mode == BOTH) assert(vectorsEqual(res, res16, m));
+//     dimensions.push_back(std::to_string(m) + "x" + std::to_string(k));
+//     mklTimes.push_back(mklTime/(double)numIter);
+//     myTimes.push_back(myTime/(double)numIter);
+//     // Free allocated memory
+//     mkl_free(mat); mkl_free(vec); mkl_free(res);
+//     free(mat16); free(vec16); free(res16);
+// }
 
 
 // int main(int argc, char** argv) {
@@ -622,3 +530,4 @@ void benchDimensions(long m, long k, long numIter, PROGRAM_MODE mode, bool real)
 //     }
 //     return 0;
 // }
+#endif

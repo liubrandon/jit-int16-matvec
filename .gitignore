@@ -64,3 +64,4 @@ e000
 # End of https://www.toptal.com/developers/gitignore/api/linux,c++,assembler
 .vscode/c_cpp_properties.json
 .vscode/settings.json
+main
