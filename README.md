@@ -2,13 +2,14 @@
 
 byl_jit_int16_matvec.hpp provides an int16_t, fixed-point, complex matrix vector multiplication kernels using the Xbyak just-in-time code generator. It runs ~1.5 - 6x faster than Intel MKL's JIT cgemm.
 
-It uses fixed-point arithmetic on int16_t as opposed to floating-point arithmetic on floats (32 bits) so as to take up half the memory space, allow for twice as many computations per SIMD instruction, and reduce memory loads and stores by half. With 9 fractional bits, the range and precision is sufficient for the input values in the 5G software baseband processing research project that I developed this for at the Yale Efficient Computing Lab.
 
 ### Implementation details and limitations
 I use AVX-512 instructions in my kernel generator including vpdpwssds from the Vector Neural Network Instruction extension for integer fused-multiply add operations. Currently, my kernel generator supports matrix dimensions M rows by K columns where M <= 208, M is a multiple of 16, and any K.
 
+The just-in-time compiled kernels use fixed-point arithmetic on int16_t as opposed to floating-point arithmetic on floats (32 bits) so as to take up half the memory space, allow for twice as many computations per SIMD instruction, and reduce memory loads and stores by half. With 9 fractional bits, the range and precision is sufficient for the input values in the 5G software baseband processing research project that I developed this for at the Yale Efficient Computing Lab.
+
 ### Instructions
-1. Install Xbyak acorrding to the [instructions on Github](https://github.com/herumi/xbyak#install)
+1. Install Xbyak according to the [instructions on Github](https://github.com/herumi/xbyak#install)
 2. Copy byl_jit_int16_matvec.hpp to your project directory and include it in any files necessary
 3. Create and use a complex matric vector multiplication kernel for MxK * Kx1 problem size referencing the following sample code:
 
