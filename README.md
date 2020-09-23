@@ -11,7 +11,7 @@ The just-in-time compiled kernels use fixed-point arithmetic on int16_t as oppos
 ### Instructions
 1. Install Xbyak according to the [instructions on Github](https://github.com/herumi/xbyak#install)
 2. Copy byl_jit_int16_matvec.hpp to your project directory and include it in any files necessary
-3. Create and use a complex matric vector multiplication kernel for MxK * Kx1 problem size referencing the following sample code:
+3. Create and use a complex matrix vector multiplication kernel for a MxK * Kx1 problem size referencing the following sample code:
 
 ```c++
 // "jit16" and "matvec16" are placeholder names and can be set by the user
