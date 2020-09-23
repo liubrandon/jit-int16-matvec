@@ -1,6 +1,6 @@
 # Fixed-point, integer, complex matrix vector multiplication
 
-byl_jit_int16_matvec.hpp provides an int16_t, fixed-point, complex matrix vector multiplication kernels using the Xbyak just-in-time code generator. It runs ~1.5 - 6x faster than Intel MKL's JIT cgemm.
+`byl_jit_int16_matvec.hpp` provides int16_t, fixed-point, complex matrix vector multiplication kernels using the Xbyak just-in-time code generator. They run ~1.5 - 6x faster than Intel MKL's JIT cgemm.
 
 
 ### Implementation details and limitations
